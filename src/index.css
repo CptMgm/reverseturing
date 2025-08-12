@@ -1,0 +1,207 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply min-h-screen text-gray-100;
+    font-family: 'Inter', sans-serif;
+    background: #0a0a0a;
+    background-image: 
+      radial-gradient(circle at 25% 25%, #1a1a1a 0%, transparent 50%),
+      radial-gradient(circle at 75% 75%, #1a1a1a 0%, transparent 50%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out;
+}
+
+@layer components {
+  .portal-btn-primary {
+    @apply relative px-8 py-4 font-bold text-white border-2 transition-all duration-200 transform hover:scale-105 active:scale-95;
+    background: linear-gradient(45deg, #ff8c00, #ffa500);
+    border-color: #ff8c00;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    box-shadow: 0 0 20px rgba(255, 140, 0, 0.3);
+  }
+  
+  .portal-btn-primary:hover {
+    background: linear-gradient(45deg, #ffa500, #ffb347);
+    box-shadow: 0 0 30px rgba(255, 140, 0, 0.5);
+  }
+  
+  .portal-btn-secondary {
+    @apply relative px-8 py-4 font-bold text-gray-300 bg-gray-800 border-2 border-blue-400 transition-all duration-200 transform hover:scale-105;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+  }
+  
+  .portal-btn-secondary:hover {
+    @apply bg-gray-700 text-blue-300;
+    box-shadow: 0 0 25px rgba(59, 130, 246, 0.5);
+  }
+  
+  .portal-panel {
+    @apply relative bg-gray-900 border-2 border-gray-600 p-6 transition-all duration-300;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+    border-image: linear-gradient(45deg, #4a5568, #2d3748) 1;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+  
+  .portal-panel-orange {
+    @apply portal-panel;
+    border-color: #ff8c00;
+    box-shadow: 
+      inset 0 1px 3px rgba(0, 0, 0, 0.5), 
+      0 1px 3px rgba(0, 0, 0, 0.3),
+      0 0 20px rgba(255, 140, 0, 0.1);
+  }
+  
+  .portal-panel-blue {
+    @apply portal-panel;
+    border-color: #0080ff;
+    box-shadow: 
+      inset 0 1px 3px rgba(0, 0, 0, 0.5), 
+      0 1px 3px rgba(0, 0, 0, 0.3),
+      0 0 20px rgba(0, 128, 255, 0.1);
+  }
+  
+  .aperture-title {
+    font-family: 'JetBrains Mono', monospace;
+    @apply text-4xl font-bold tracking-wider;
+    color: #ff8c00;
+    text-shadow: 0 0 10px rgba(255, 140, 0, 0.5);
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  }
+  
+  .portal-text {
+    @apply text-gray-300 leading-relaxed;
+  }
+  
+  .portal-input {
+    @apply w-full p-4 bg-black border-2 border-gray-600 text-gray-100 focus:border-orange-400 focus:outline-none transition-colors duration-200;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .portal-input:focus {
+    box-shadow: 0 0 15px rgba(255, 140, 0, 0.3);
+  }
+  
+  .game-container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8;
+  }
+  
+  .aperture-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+  
+  .test-subject-card {
+    @apply portal-panel-blue p-4 cursor-pointer transition-all duration-200 hover:scale-105;
+  }
+  
+  .test-subject-card:hover {
+    box-shadow: 0 0 25px rgba(0, 128, 255, 0.3);
+  }
+  
+  .chamber-status {
+    @apply text-xs font-mono uppercase tracking-wider;
+    color: #00ff41;
+    text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+  }
+}
+
+@keyframes portal-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 140, 0, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(255, 140, 0, 0.6), 0 0 60px rgba(255, 140, 0, 0.3); }
+}
+
+@keyframes portal-blue-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 128, 255, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(0, 128, 255, 0.6), 0 0 60px rgba(0, 128, 255, 0.3); }
+}
+
+@keyframes aperture-scan {
+  0% { transform: translateX(-100%); opacity: 0; }
+  10%, 90% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes chamber-rotate {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+
+@keyframes subject-float {
+  0%, 100% { transform: translateY(0px) rotateX(0deg); }
+  50% { transform: translateY(-10px) rotateX(5deg); }
+}
+
+@keyframes glitch {
+  0% { transform: translate(0); filter: hue-rotate(0deg); }
+  20% { transform: translate(-2px, 2px); filter: hue-rotate(90deg); }
+  40% { transform: translate(-2px, -2px); filter: hue-rotate(180deg); }
+  60% { transform: translate(2px, 2px); filter: hue-rotate(270deg); }
+  80% { transform: translate(2px, -2px); filter: hue-rotate(360deg); }
+  100% { transform: translate(0); filter: hue-rotate(0deg); }
+}
+
+.portal-glow { animation: portal-glow 2s ease-in-out infinite; }
+.portal-blue-glow { animation: portal-blue-glow 2s ease-in-out infinite; }
+.chamber-rotate { animation: chamber-rotate 20s linear infinite; }
+.subject-float { animation: subject-float 3s ease-in-out infinite; }
+.glitch { animation: glitch 0.3s linear infinite; }
+
+.aperture-scan::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 140, 0, 0.1) 45%, 
+    rgba(255, 140, 0, 0.3) 50%, 
+    rgba(255, 140, 0, 0.1) 55%, 
+    transparent 100%);
+  animation: aperture-scan 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.chamber-3d {
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+.subject-3d {
+  transform-style: preserve-3d;
+  transform: rotateX(10deg) rotateY(0deg);
+  transition: all 0.3s ease;
+}
+
+.subject-3d:hover {
+  transform: rotateX(15deg) rotateY(10deg) scale(1.05);
+}
+
+@media (max-width: 640px) {
+  .game-container { @apply px-2 py-4; }
+  .portal-btn-primary, .portal-btn-secondary { @apply px-4 py-2 text-sm; }
+  .aperture-title { @apply text-2xl; }
+}
