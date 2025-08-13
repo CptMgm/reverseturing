@@ -29,7 +29,8 @@ const GameScene = ({ playerName, models, onComplete }) => {
     { id: 'player1', name: aiPersonas.player1.name, type: 'ai', model: models.player1 },
     { id: 'player2', name: aiPersonas.player2.name, type: 'ai', model: models.player2 },
     { id: 'player3', name: aiPersonas.player3.name, type: 'ai', model: models.player3 },
-    { id: 'player4', name: aiPersonas.player4.name, type: 'ai', model: models.player4 }
+    { id: 'player4', name: aiPersonas.player4.name, type: 'ai', model: models.player4 },
+    { id: 'player5', name: aiPersonas.player5.name, type: 'ai', model: models.player5 }
   ];
 
   useEffect(() => {
