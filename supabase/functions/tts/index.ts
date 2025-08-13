@@ -9,11 +9,12 @@ const corsHeaders = {
 
 // Voice mapping for different character types
 const voiceMapping: Record<string, string> = {
-  'moderator': '9BWtsMINqrJLrRacOk9x', // Aria - clear, neutral
-  'Marcus Sterling': 'CwhRBWXzGAHq8TQ4Fs17', // Roger - professional executive
-  'Luna Chakra': 'EXAVITQu4vr4xnSDxMaL', // Sarah - calm, soothing
-  'Dr. Silicon': 'JBFqnCBsd6RMkjVDRZzb', // George - confident tech voice
-  'xXDarkGamerXx': 'TX3LPaxmHKxFdv7VOQHJ', // Liam - energetic, young
+  'moderator': '9BWtsMINqrJLrRacOk9x', // Aria - clear, neutral (Dorkesh Cartell)
+  'Elongated Musk': 'CwhRBWXzGAHq8TQ4Fs17', // Roger - visionary space entrepreneur
+  'The Zucc': 'TX3LPaxmHKxFdv7VOQHJ', // Liam - tech CEO
+  'Domis Hassoiboi': 'JBFqnCBsd6RMkjVDRZzb', // George - philosophical chess master
+  'Spam Alpman': 'bIHbv24MWmeRgasZH58o', // Will - energetic crypto trader
+  'Wario Amadeuss': 'EXAVITQu4vr4xnSDxMaL', // Sarah - dramatic classical composer
 };
 
 serve(async (req) => {
