@@ -1,4 +1,4 @@
-const API_ENDPOINT = 'http://localhost:3001/api/ai';
+import { supabase } from '@/integrations/supabase/client';
 
 class AIService {
   constructor(provider, playerId = null) {
@@ -17,26 +17,21 @@ class AIService {
     console.log('========================================');
     
     try {
-      const response = await fetch(API_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('ai-chat', {
+        body: {
           provider: this.provider,
           systemPrompt,
           userPrompt: userMessage,
           conversationHistory,
           maxTokens: 150,
           temperature: 0.8,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
+      if (error) {
+        throw new Error(`API request failed: ${error.message}`);
       }
 
-      const data = await response.json();
       console.log(`\n✅ RESPONSE FROM ${this.provider.toUpperCase()} (${this.playerId}):`, data.response);
       console.log('============================================\n');
       return data.response;
