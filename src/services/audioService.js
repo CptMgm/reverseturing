@@ -1,3 +1,6 @@
+
+import { supabase } from '../integrations/supabase/client';
+
 class AudioService {
   constructor() {
     this.audioQueue = [];
@@ -11,7 +14,7 @@ class AudioService {
     this.setupSpeechRecognition();
   }
 
-  // Text-to-Speech using ElevenLabs
+  // Text-to-Speech using ElevenLabs via Supabase Edge Function
   async speak(text, speaker = 'moderator') {
     if (this.isMuted || !text?.trim()) {
       console.log('TTS skipped:', this.isMuted ? 'muted' : 'empty text');
@@ -21,29 +24,28 @@ class AudioService {
     console.log('TTS request:', { text: text.substring(0, 50) + '...', speaker });
     
     try {
-      const response = await fetch('http://localhost:3001/api/tts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('tts', {
+        body: {
           text: text.trim(),
           voice: speaker,
           stability: 0.5,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        if (response.status === 429) {
+      if (error) {
+        console.error('TTS request failed:', error);
+        
+        if (error.message?.includes('Rate limit')) {
           console.warn('TTS rate limited, retrying in 2 seconds...');
           await new Promise(resolve => setTimeout(resolve, 2000));
           return this.speak(text, speaker); // Retry once
         }
-        console.error('TTS request failed:', response.status, response.statusText);
-        throw new Error(`TTS request failed: ${response.status}`);
+        
+        throw new Error(`TTS request failed: ${error.message}`);
       }
 
-      const audioBlob = await response.blob();
+      // The Edge Function returns audio data directly
+      const audioBlob = new Blob([data], { type: 'audio/mpeg' });
       const audioUrl = URL.createObjectURL(audioBlob);
       console.log('TTS success, playing audio');
       
@@ -155,7 +157,6 @@ class AudioService {
     };
   }
 
-  // Start speech recognition
   async startListening() {
     if (!this.speechRecognition) {
       throw new Error('Speech recognition not supported');
@@ -202,7 +203,6 @@ class AudioService {
     }
   }
 
-  // Check if speech recognition is available
   get speechRecognitionAvailable() {
     return !!this.speechRecognition;
   }
