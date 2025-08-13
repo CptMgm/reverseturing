@@ -32,6 +32,10 @@ serve(async (req) => {
       case 'google':
         response = await handleGemini(systemPrompt, userPrompt, conversationHistory, maxTokens, temperature);
         break;
+      case 'grok':
+      case 'xai':
+        response = await handleGrok(systemPrompt, userPrompt, conversationHistory, maxTokens, temperature);
+        break;
       default:
         throw new Error(`Unsupported AI provider: ${provider}`);
     }
@@ -158,4 +162,38 @@ async function handleGemini(systemPrompt: string, userPrompt: string, conversati
 
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || "I need a moment to think about that.";
+}
+
+async function handleGrok(systemPrompt: string, userPrompt: string, conversationHistory: any[], maxTokens: number, temperature: number) {
+  const apiKey = Deno.env.get('XAI_API_KEY');
+  if (!apiKey) {
+    throw new Error('xAI API key not configured');
+  }
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...conversationHistory,
+    { role: 'user', content: userPrompt }
+  ];
+
+  const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'grok-beta',
+      messages,
+      max_tokens: maxTokens,
+      temperature,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`xAI API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content || "I need a moment to think about that.";
 }

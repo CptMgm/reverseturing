@@ -435,9 +435,64 @@ const TableScene = ({ players, currentSpeaker }) => {
         if (!position) return null;
         
         const isSpeaking = currentSpeaker === player.id;
-        const skinTones = ["#fdbcb4", "#d4a574", "#c68642", "#8b6039"];
-        const suitColors = ["#1a1a2a", "#2a1a1a", "#1a2a1a", "#2a2a1a"];
-        const hairColors = ["#2a1a0a", "#4a3a1a", "#6a5a3a", "#3a2a1a"];
+        
+        // Character-specific appearances
+        const getCharacterAppearance = (playerId) => {
+          switch(playerId) {
+            case 'player1': // Elongated Muskett
+              return {
+                skinTone: '#f5deb3',
+                suitColor: '#1a1a2a', // Dark blue suit
+                tieColor: '#ff4500', // Orange tie (SpaceX vibes)
+                hairColor: '#4a3a2a',
+                eyeColor: '#4682b4',
+                hairstyle: 'swept', // Swept back hair
+                accessories: 'futuristic' // Futuristic glasses
+              };
+            case 'player2': // Wario Amadeuss
+              return {
+                skinTone: '#fdbcb4',
+                suitColor: '#2a2a3a', // Dark gray suit
+                tieColor: '#4b0082', // Purple tie (AI safety)
+                hairColor: '#3a3a3a',
+                eyeColor: '#8b4513',
+                hairstyle: 'neat', // Well-groomed
+                accessories: 'glasses' // Intellectual glasses
+              };
+            case 'player3': // Domis Hassoiboi
+              return {
+                skinTone: '#d4a574',
+                suitColor: '#1a2a1a', // Dark green suit
+                tieColor: '#2f4f4f', // Dark slate gray (chess board)
+                hairColor: '#2a2a2a',
+                eyeColor: '#2f4f2f',
+                hairstyle: 'short', // Short neat hair
+                accessories: 'none'
+              };
+            case 'player4': // Scan Ctrl+Altman
+              return {
+                skinTone: '#ffe4c4',
+                suitColor: '#000033', // Navy blue suit (OpenAI)
+                tieColor: '#00ff00', // Bright green (AGI acceleration)
+                hairColor: '#5a4a3a',
+                eyeColor: '#708090',
+                hairstyle: 'casual', // Casual tech CEO
+                accessories: 'none'
+              };
+            default:
+              return {
+                skinTone: '#fdbcb4',
+                suitColor: '#2a2a2a',
+                tieColor: '#8b0000',
+                hairColor: '#3a3a3a',
+                eyeColor: '#4a4a4a',
+                hairstyle: 'normal',
+                accessories: 'none'
+              };
+          }
+        };
+        
+        const appearance = getCharacterAppearance(player.id);
         
         return (
           <group key={player.id} position={position} rotation={rotation}>
@@ -485,7 +540,7 @@ const TableScene = ({ players, currentSpeaker }) => {
               {/* Well-fitted suit jacket */}
               <RoundedBox args={[0.95, 1.25, 0.42]} radius={0.06} position={[0, 0, 0]}>
                 <meshStandardMaterial 
-                  color={suitColors[index % 4]}
+                  color={appearance.suitColor}
                   roughness={0.6}
                   metalness={0.08}
                 />
@@ -504,7 +559,7 @@ const TableScene = ({ players, currentSpeaker }) => {
               {/* Professional tie */}
               <RoundedBox args={[0.1, 0.65, 0.02]} radius={0.01} position={[0, 0.15, 0.21]}>
                 <meshStandardMaterial 
-                  color={["#8b0000", "#000080", "#2f4f2f", "#4b0082"][index % 4]}
+                  color={appearance.tieColor}
                   metalness={0.2}
                   roughness={0.7}
                 />
@@ -512,16 +567,16 @@ const TableScene = ({ players, currentSpeaker }) => {
               
               {/* Suit lapels */}
               <RoundedBox args={[0.08, 0.3, 0.4]} radius={0.02} position={[0.2, 0.4, 0.01]}>
-                <meshStandardMaterial color={suitColors[index % 4]} roughness={0.6} />
+                <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
               </RoundedBox>
               <RoundedBox args={[0.08, 0.3, 0.4]} radius={0.02} position={[-0.2, 0.4, 0.01]}>
-                <meshStandardMaterial color={suitColors[index % 4]} roughness={0.6} />
+                <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
               </RoundedBox>
               
               {/* Realistic head */}
               <Sphere args={[0.4, 32, 32]} position={[0, 0.9, 0]} castShadow>
                 <meshStandardMaterial 
-                  color={skinTones[index % 4]}
+                  color={appearance.skinTone}
                   emissive={isSpeaking ? '#ffaa77' : '#000000'}
                   emissiveIntensity={isSpeaking ? 0.2 : 0}
                   roughness={0.8}
@@ -539,10 +594,10 @@ const TableScene = ({ players, currentSpeaker }) => {
                   <meshStandardMaterial color="#ffffff" roughness={0.1} />
                 </Sphere>
                 <Sphere args={[0.04, 16, 16]} position={[0.18, 0.05, 0.38]}>
-                  <meshStandardMaterial color={["#4a7c7e", "#8b4513", "#2f4f2f", "#708090"][index % 4]} />
+                  <meshStandardMaterial color={appearance.eyeColor} />
                 </Sphere>
                 <Sphere args={[0.04, 16, 16]} position={[-0.18, 0.05, 0.38]}>
-                  <meshStandardMaterial color={["#4a7c7e", "#8b4513", "#2f4f2f", "#708090"][index % 4]} />
+                  <meshStandardMaterial color={appearance.eyeColor} />
                 </Sphere>
                 <Sphere args={[0.02, 8, 8]} position={[0.18, 0.05, 0.4]}>
                   <meshStandardMaterial color="#000000" />
@@ -553,15 +608,15 @@ const TableScene = ({ players, currentSpeaker }) => {
                 
                 {/* Eyebrows */}
                 <RoundedBox args={[0.12, 0.02, 0.03]} radius={0.005} position={[0.18, 0.15, 0.36]}>
-                  <meshStandardMaterial color={hairColors[index % 4]} roughness={1} />
+                  <meshStandardMaterial color={appearance.hairColor} roughness={1} />
                 </RoundedBox>
                 <RoundedBox args={[0.12, 0.02, 0.03]} radius={0.005} position={[-0.18, 0.15, 0.36]}>
-                  <meshStandardMaterial color={hairColors[index % 4]} roughness={1} />
+                  <meshStandardMaterial color={appearance.hairColor} roughness={1} />
                 </RoundedBox>
                 
                 {/* Professional nose */}
                 <RoundedBox args={[0.06, 0.12, 0.1]} radius={0.02} position={[0, -0.02, 0.38]}>
-                  <meshStandardMaterial color={skinTones[index % 4]} roughness={0.8} />
+                  <meshStandardMaterial color={appearance.skinTone} roughness={0.8} />
                 </RoundedBox>
                 
                 {/* Mouth */}
@@ -569,39 +624,72 @@ const TableScene = ({ players, currentSpeaker }) => {
                   <meshStandardMaterial color="#d08080" roughness={0.6} />
                 </RoundedBox>
                 
-                {/* Professional hairstyle */}
+                {/* Character-specific hairstyle */}
                 <Sphere args={[0.42, 20, 20]} position={[0, 0.2, -0.08]}>
                   <meshStandardMaterial 
-                    color={hairColors[index % 4]}
+                    color={appearance.hairColor}
                     roughness={0.9}
                   />
                 </Sphere>
+                
+                {/* Character-specific accessories */}
+                {appearance.accessories === 'glasses' && (
+                  <>
+                    {/* Glasses frame */}
+                    <RoundedBox args={[0.08, 0.08, 0.02]} radius={0.005} position={[0.18, 0.05, 0.42]}>
+                      <meshStandardMaterial color="#1a1a1a" metalness={0.5} roughness={0.3} />
+                    </RoundedBox>
+                    <RoundedBox args={[0.08, 0.08, 0.02]} radius={0.005} position={[-0.18, 0.05, 0.42]}>
+                      <meshStandardMaterial color="#1a1a1a" metalness={0.5} roughness={0.3} />
+                    </RoundedBox>
+                    {/* Bridge */}
+                    <Cylinder args={[0.01, 0.01, 0.08, 8]} position={[0, 0.05, 0.42]} rotation={[0, 0, Math.PI/2]}>
+                      <meshStandardMaterial color="#1a1a1a" metalness={0.5} roughness={0.3} />
+                    </Cylinder>
+                  </>
+                )}
+                
+                {appearance.accessories === 'futuristic' && (
+                  <>
+                    {/* Futuristic glasses (for Elongated Muskett) */}
+                    <RoundedBox args={[0.12, 0.06, 0.02]} radius={0.008} position={[0.18, 0.05, 0.42]}>
+                      <meshStandardMaterial color="#ff4500" metalness={0.8} roughness={0.1} emissive="#ff4500" emissiveIntensity={0.2} />
+                    </RoundedBox>
+                    <RoundedBox args={[0.12, 0.06, 0.02]} radius={0.008} position={[-0.18, 0.05, 0.42]}>
+                      <meshStandardMaterial color="#ff4500" metalness={0.8} roughness={0.1} emissive="#ff4500" emissiveIntensity={0.2} />
+                    </RoundedBox>
+                    {/* Futuristic bridge */}
+                    <Cylinder args={[0.015, 0.015, 0.08, 8]} position={[0, 0.05, 0.42]} rotation={[0, 0, Math.PI/2]}>
+                      <meshStandardMaterial color="#ff4500" metalness={0.8} roughness={0.1} />
+                    </Cylinder>
+                  </>
+                )}
               </group>
               
               {/* Natural arm positioning */}
               <group>
                 {/* Right arm - resting on table */}
                 <RoundedBox args={[0.18, 0.5, 0.18]} radius={0.05} position={[0.5, 0.2, 0.15]} rotation={[0.3, 0, -0.15]}>
-                  <meshStandardMaterial color={suitColors[index % 4]} roughness={0.6} />
+                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
                 </RoundedBox>
                 <RoundedBox args={[0.16, 0.4, 0.16]} radius={0.04} position={[0.75, -0.15, 0.45]} rotation={[0.8, 0, -0.1]}>
-                  <meshStandardMaterial color={suitColors[index % 4]} roughness={0.6} />
+                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
                 </RoundedBox>
                 
                 {/* Left arm - natural pose */}
                 <RoundedBox args={[0.18, 0.5, 0.18]} radius={0.05} position={[-0.5, 0.2, 0.15]} rotation={[0.3, 0, 0.15]}>
-                  <meshStandardMaterial color={suitColors[index % 4]} roughness={0.6} />
+                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
                 </RoundedBox>
                 <RoundedBox args={[0.16, 0.4, 0.16]} radius={0.04} position={[-0.75, -0.15, 0.45]} rotation={[0.8, 0, 0.1]}>
-                  <meshStandardMaterial color={suitColors[index % 4]} roughness={0.6} />
+                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
                 </RoundedBox>
                 
                 {/* Hands positioned naturally */}
                 <Sphere args={[0.11, 16, 16]} position={[0.9, -0.45, 0.65]}>
-                  <meshStandardMaterial color={skinTones[index % 4]} roughness={0.8} />
+                  <meshStandardMaterial color={appearance.skinTone} roughness={0.8} />
                 </Sphere>
                 <Sphere args={[0.11, 16, 16]} position={[-0.9, -0.45, 0.65]}>
-                  <meshStandardMaterial color={skinTones[index % 4]} roughness={0.8} />
+                  <meshStandardMaterial color={appearance.skinTone} roughness={0.8} />
                 </Sphere>
                 
                 {/* Shirt cuffs */}

@@ -61,7 +61,6 @@ function App() {
         {gameState === 'game' && (
           <GameScene 
             playerName={playerName}
-            models={selectedModels}
             onComplete={handleGameComplete}
           />
         )}

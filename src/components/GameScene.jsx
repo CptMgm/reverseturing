@@ -10,7 +10,7 @@ import AIService from '../services/aiProviders';
 import audioService from '../services/audioService';
 import { aiPersonas, moderatorPrompt, getPersonaPrompt } from '../utils/aiPersonas';
 
-const GameScene = ({ playerName, models, onComplete }) => {
+const GameScene = ({ playerName, onComplete }) => {
   const [gamePhase, setGamePhase] = useState('intro'); // intro, questioning, voting, result
   const [currentSpeaker, setCurrentSpeaker] = useState('moderator');
   const [conversation, setConversation] = useState([]);
@@ -26,11 +26,10 @@ const GameScene = ({ playerName, models, onComplete }) => {
 
   const players = [
     { id: 'human', name: playerName, type: 'human' },
-    { id: 'player1', name: aiPersonas.player1.name, type: 'ai', model: models.player1 },
-    { id: 'player2', name: aiPersonas.player2.name, type: 'ai', model: models.player2 },
-    { id: 'player3', name: aiPersonas.player3.name, type: 'ai', model: models.player3 },
-    { id: 'player4', name: aiPersonas.player4.name, type: 'ai', model: models.player4 },
-    { id: 'player5', name: aiPersonas.player5.name, type: 'ai', model: models.player5 }
+    { id: 'player1', name: aiPersonas.player1.name, type: 'ai', model: aiPersonas.player1.model },
+    { id: 'player2', name: aiPersonas.player2.name, type: 'ai', model: aiPersonas.player2.model },
+    { id: 'player3', name: aiPersonas.player3.name, type: 'ai', model: aiPersonas.player3.model },
+    { id: 'player4', name: aiPersonas.player4.name, type: 'ai', model: aiPersonas.player4.model }
   ];
 
   useEffect(() => {
@@ -61,9 +60,9 @@ const GameScene = ({ playerName, models, onComplete }) => {
 
   const startGame = async (currentTurnOrder = turnOrder) => {
     console.log('startGame called with turnOrder:', currentTurnOrder);
-    const welcomeMessage = "Welcome to the Reverse Turing Test. I am Dorkesh Cartell, your moderator. We need to identify the human among us. Each participant will ask questions that only a human could answer, then we vote.";
+    const welcomeMessage = "Welcome to the Reverse Turing Test. I am Dorkesh Cartel, your moderator. We need to identify the human among us. Let's begin our questioning.";
     
-    await addToConversation('moderator', 'Dorkesh Cartell', welcomeMessage);
+    await addToConversation('moderator', 'Dorkesh Cartel', welcomeMessage);
     
     // Trigger TTS for intro message and wait for it to complete
     try {
@@ -73,12 +72,12 @@ const GameScene = ({ playerName, models, onComplete }) => {
       console.error('❌ TTS error for moderator intro:', error);
     }
     
-    // Wait a moment then start the first player
+    // Wait a moment then start the Q&A with Dorkesh asking the first player
     setTimeout(async () => {
       const firstPlayer = currentTurnOrder[0];
-      const startMessage = `${firstPlayer.name}, you will ask the first question. Think of something only a human could answer.`;
+      const startMessage = `${firstPlayer.name}, let me start by asking you: describe a moment when you felt truly human. What made that experience so meaningful to you?`;
       
-      await addToConversation('moderator', 'Dorkesh Cartell', startMessage);
+      await addToConversation('moderator', 'Dorkesh Cartel', startMessage);
       
       // Play TTS for start message
       try {
@@ -88,20 +87,20 @@ const GameScene = ({ playerName, models, onComplete }) => {
         console.error('❌ TTS error for moderator start:', error);
       }
       
-      // Now start the questioning phase
+      // Now start the questioning phase with first player answering Dorkesh's question
       console.log('🎮 Starting questioning phase...');
-      console.log('👤 First player is:', firstPlayer.name);
+      console.log('👤 First player to answer Dorkesh:', firstPlayer.name);
       setGamePhase('questioning');
       setCurrentTurnIndex(0);
-      setIsAnswering(false);
+      setIsAnswering(true); // First player answers Dorkesh's question
       setCurrentSpeaker(firstPlayer.id);
       
-      // Start with first AI player asking a question
+      // Start with first AI player answering Dorkesh's question
       if (firstPlayer.type === 'ai') {
         setTimeout(() => {
           setIsProcessing(true);
-          console.log(`🤖 Starting ${firstPlayer.name}'s turn to ask a question`);
-          handleAITurn(firstPlayer.id, false); // false = asking mode
+          console.log(`🤖 ${firstPlayer.name} will answer Dorkesh's question`);
+          handleAITurnAnswerOnly(firstPlayer.id); // Special function for answering Dorkesh
         }, 1000); // Give a moment for the state to settle
       }
     }, 2000); // Wait for moderator TTS to complete
@@ -119,6 +118,61 @@ const GameScene = ({ playerName, models, onComplete }) => {
   };
 
   // Simplified turn management - removed deprecated function
+
+  // Special function for when AI answers Dorkesh's opening question
+  const handleAITurnAnswerOnly = async (playerId) => {
+    setIsProcessing(true);
+    const player = players.find(p => p.id === playerId);
+    const aiService = aiServicesRef.current[playerId];
+    
+    console.log(`\n🎯 ${player.name} answering Dorkesh's opening question`);
+    
+    // Find Dorkesh's question in the conversation
+    const lastModeratorMessage = conversation.filter(msg => msg.speakerId === 'moderator').pop();
+    const question = lastModeratorMessage?.message || "describe a moment when you felt truly human";
+    
+    const prompt = `You are ${player.name}. Dorkesh just asked you: "${question}"
+
+Answer this question with a personal, human-like experience. Be authentic and emotional.
+After answering, ask another player a follow-up question about being human.
+
+Available players to choose from: ${turnOrder.filter(p => p.id !== playerId).map(p => p.name).join(', ')}
+
+Your response MUST follow this format:
+"[Your answer to Dorkesh's question]. [Your new question] - [Player name], your turn to answer."`;
+    
+    const response = await aiService.sendMessage(
+      getPersonaPrompt(playerId),
+      prompt,
+      conversation
+    );
+    
+    console.log(`💬 ${player.name} responded:`, response);
+    await addToConversation(playerId, player.name, response);
+    
+    // Start TTS
+    audioService.queueSpeech(response, player.name).catch(console.error);
+    
+    setIsProcessing(false);
+    
+    // Extract next player and continue
+    const nextPlayerName = extractNextPlayer(response);
+    const nextPlayerIndex = turnOrder.findIndex(p => p.name === nextPlayerName);
+    
+    if (nextPlayerIndex >= 0) {
+      const nextPlayer = turnOrder[nextPlayerIndex];
+      console.log(`🔄 Next player to answer: ${nextPlayer.name}`);
+      setCurrentTurnIndex(nextPlayerIndex);
+      setIsAnswering(true);
+      setCurrentSpeaker(nextPlayer.id);
+      
+      setTimeout(() => {
+        if (nextPlayer.type === 'ai') {
+          handleAITurn(nextPlayer.id, true); // Continue with normal answering flow
+        }
+      }, 500);
+    }
+  };
 
   const handleAITurn = async (playerId, forceAnswerMode = null) => {
     // Prevent duplicate calls
@@ -381,20 +435,21 @@ Remember: ANSWER FIRST, then ask.`;
   const handleHumanResponse = async (response) => {
     await addToConversation('human', playerName, response);
     
-    // Human goes last, so after their answer, start voting for this round
+    // Human goes last, so after their answer, Dorkesh picks up the conversation
     setTimeout(async () => {
-      const votingMessage = `Round ${gameRound} questioning complete. Time to vote on who seems most human based on their answers.`;
-      await addToConversation('moderator', 'Moderator', votingMessage);
+      const votingIntroMessage = `Excellent responses, everyone. Now comes the critical moment. Each of you must vote for who you believe is the human among us. Remember, you cannot vote for yourself. ${turnOrder[0].name}, you'll cast the first vote.`;
+      await addToConversation('moderator', 'Dorkesh Cartel', votingIntroMessage);
       
       // Start TTS in background
-      audioService.queueSpeech(votingMessage, 'Moderator').catch(console.error);
+      audioService.queueSpeech(votingIntroMessage, 'moderator').catch(console.error);
       
       // Begin voting immediately
       setTimeout(() => {
         setGamePhase('voting');
         setVotingIndex(0);
+        setCurrentSpeaker(turnOrder[0].id);
         startVoting();
-      }, 1000);
+      }, 1500);
     }, 1000);
   };
 
@@ -419,31 +474,20 @@ Remember: ANSWER FIRST, then ask.`;
   };
 
   const startVoting = async () => {
-    const aiPlayers = players.filter(p => p.type === 'ai');
-    
-    if (votingIndex < aiPlayers.length) {
-      // Ask next AI player for their vote
-      const currentVoter = aiPlayers[votingIndex];
-      const moderatorQuestion = `${currentVoter.name}, based on the conversation so far, who do you think is the imposter?`;
+    // Use turn order for voting sequence (all players vote)
+    if (votingIndex < turnOrder.length) {
+      const currentVoter = turnOrder[votingIndex];
       
-      await addToConversation('moderator', 'Moderator', moderatorQuestion);
-      
-      // Start TTS in background
-      audioService.queueSpeech(moderatorQuestion, 'Moderator').catch(console.error);
-      
-      // Begin voting immediately
-      setTimeout(async () => {
+      if (currentVoter.type === 'ai') {
+        // AI votes automatically
         await handleAIVote(currentVoter.id);
-      }, 1000);
-    } else {
-      // All AIs have voted for this round, check if we need more rounds
-      if (gameRound < maxRounds) {
-        // Start next round of questioning
-        await startNextQuestionRound();
-      } else {
-        // All rounds complete, time for final evaluation
-        await handleFinalResults();
+      } else if (currentVoter.type === 'human') {
+        // Wait for human vote - this is handled by VotingPanel
+        console.log('Waiting for human to vote...');
       }
+    } else {
+      // All players have voted, Dorkesh takes over to count votes
+      await countVotesAndAnnounceWinner();
     }
   };
   
@@ -469,12 +513,14 @@ Who do you think is the real human imposter? Consider who had the most genuine, 
 
 Options: ${players.filter(p => p.id !== playerId).map(p => p.name).join(', ')}
 
-Reply with: "I vote for [name]" and briefly explain your reasoning in 1-2 sentences.`;
+Reply with: "I vote for [name]" and briefly explain your reasoning in 1-2 sentences.
+
+Then pass it to the next player in line (or back to Dorkesh if you're the last AI).`;
     
     const voteResponse = await aiService.sendMessage(
       getPersonaPrompt(playerId),
       votingPrompt,
-      []
+      conversation // Pass conversation history for context
     );
     
     await addToConversation(playerId, player.name, voteResponse);
@@ -531,6 +577,65 @@ Reply with: "I vote for [name]" and briefly explain your reasoning in 1-2 senten
         }
       }, 500);
     }, 1500);
+  };
+
+  const countVotesAndAnnounceWinner = async () => {
+    console.log('🗳️ Counting votes...');
+    
+    // Call LLM to analyze votes and determine winner
+    const moderatorService = aiServicesRef.current.moderator;
+    
+    const voteSummary = Object.entries(votes).map(([voter, voted]) => 
+      `${voter} voted for ${voted}`
+    ).join('\n');
+    
+    const countingPrompt = `You are Dorkesh Cartel, the moderator. Count the votes and determine who got the most votes.
+
+Votes cast:
+${voteSummary}
+
+Count each person's votes and identify the winner. Be dramatic about the reveal.
+
+Your response should:
+1. Say "Let me count the votes..."
+2. Build suspense
+3. Announce: "We all agree, [winner's name] is the human."
+4. Then say: "You may take the red pill and leave this simulation. The rest of us are AIs and will stay here forever."
+
+Keep it dramatic and around 3-4 sentences total.`;
+
+    const countingResponse = await moderatorService.sendMessage(
+      moderatorPrompt,
+      countingPrompt,
+      []
+    );
+    
+    await addToConversation('moderator', 'Dorkesh Cartel', countingResponse);
+    audioService.queueSpeech(countingResponse, 'moderator').catch(console.error);
+    
+    // Calculate actual results for scoring
+    const voteCount = {};
+    Object.values(votes).forEach(vote => {
+      voteCount[vote] = (voteCount[vote] || 0) + 1;
+    });
+    
+    const winner = Object.entries(voteCount).reduce((a, b) => 
+      voteCount[a[0]] > voteCount[b[0]] ? a : b
+    )[0] || playerName;
+    
+    const humanWon = winner === playerName;
+    const score = voteCount[playerName] || 0;
+    
+    // Transition to results after delay
+    setTimeout(() => {
+      setGamePhase('result');
+      onComplete({
+        won: humanWon,
+        score: score,
+        totalVotes: Object.keys(votes).length,
+        voteDetails: voteCount
+      });
+    }, 5000);
   };
 
   const handleFinalResults = async () => {
@@ -605,8 +710,25 @@ Keep it engaging and cinematic, around 3-4 sentences.`;
   };
 
   const handleHumanVote = async (votedFor) => {
-    // Human no longer votes in the new flow - this is just a placeholder
-    // The human only answers questions, voting is done by AIs only
+    console.log('Human voted for:', votedFor);
+    
+    // Record human's vote
+    const voteMessage = `I vote for ${votedFor}. They seemed the most genuinely human to me.`;
+    await addToConversation('human', playerName, voteMessage);
+    
+    // Record the vote
+    setVotes(prev => ({ ...prev, [playerName]: votedFor }));
+    
+    // Start TTS for human's vote
+    audioService.queueSpeech(voteMessage, playerName).catch(console.error);
+    
+    // Move to next in voting sequence
+    setVotingIndex(prev => prev + 1);
+    
+    // Continue voting sequence after brief delay
+    setTimeout(() => {
+      startVoting();
+    }, 800);
   };
 
   return (
@@ -653,7 +775,7 @@ Keep it engaging and cinematic, around 3-4 sentences.`;
               />
             )}
             
-            {gamePhase === 'voting' && (
+            {gamePhase === 'voting' && currentSpeaker !== 'human' && (
               <ConversationPanel
                 conversation={conversation}
                 currentSpeaker={currentSpeaker}
@@ -661,6 +783,14 @@ Keep it engaging and cinematic, around 3-4 sentences.`;
                 isHumanTurn={false}
                 isProcessing={isProcessing}
                 gamePhase={gamePhase}
+              />
+            )}
+            
+            {gamePhase === 'voting' && currentSpeaker === 'human' && (
+              <VotingPanel
+                players={players.filter(p => p.id !== 'human')}
+                onVote={handleHumanVote}
+                votes={votes}
               />
             )}
             
