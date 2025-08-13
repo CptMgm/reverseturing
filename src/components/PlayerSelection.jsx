@@ -4,27 +4,33 @@ const PlayerSelection = ({ models, onModelChange, onStart }) => {
   const players = [
     {
       id: 'player1',
-      name: 'Marcus Sterling',
-      role: 'Corporate Executive',
-      description: 'Smooth-talking executive obsessed with synergy and KPIs'
+      name: 'Elongated Musk',
+      role: 'Space Visionary',
+      description: 'Space-obsessed tech billionaire focused on Mars and sustainable energy'
     },
     {
       id: 'player2', 
-      name: 'Luna Chakra',
-      role: 'Yoga Instructor',
-      description: 'Spiritual wellness guru who speaks in mantras and mindfulness'
+      name: 'The Zucc',
+      role: 'Tech CEO',
+      description: 'Tech startup founder obsessed with scaling and disruption'
     },
     {
       id: 'player3',
-      name: 'Dr. Silicon',
-      role: 'Tech CEO',
-      description: 'Ambitious tech founder who sees everything as scalable'
+      name: 'Domis Hassoiboi',
+      role: 'Chess Philosopher',
+      description: 'Chess grandmaster and deep thinker focused on consciousness and mathematics'
     },
     {
       id: 'player4',
-      name: 'xXDarkGamerXx',
-      role: 'Pro Gamer',
-      description: 'Elite gamer who communicates in gaming slang and memes'
+      name: 'Spam Alpman',
+      role: 'Crypto Trader',
+      description: 'Crypto trading enthusiast obsessed with diamond hands and moon missions'
+    },
+    {
+      id: 'player5',
+      name: 'Wario Amadeuss',
+      role: 'Classical Composer',
+      description: 'Passionate classical music composer with dramatic artistic flair'
     }
   ];
 
@@ -39,39 +45,41 @@ const PlayerSelection = ({ models, onModelChange, onStart }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black p-8">
+    <div className="min-h-screen bg-gradient-to-br from-background to-secondary p-8">
       <div className="max-w-6xl mx-auto">
-        <h2 className="text-4xl font-bold text-center mb-2 text-cyan-400">
+        <h2 className="text-4xl font-bold text-center mb-2 text-primary">
           THE PLAYERS
         </h2>
-        <p className="text-gray-400 text-center mb-8">
+        <p className="text-muted-foreground text-center mb-8">
           You'll be playing against these AI entities. Choose their models.
         </p>
 
-        <div className="bg-gray-800 rounded-lg p-6 mb-6 border-2 border-cyan-400">
+        <div className="bg-card rounded-lg p-6 mb-6 border-2 border-primary">
           <div className="text-center">
-            <h3 className="text-2xl font-bold text-cyan-400 mb-2">YOU</h3>
-            <p className="text-gray-300">The Human Player</p>
-            <p className="text-sm text-gray-500 mt-2">Prove your humanity to escape</p>
+            <h3 className="text-2xl font-bold text-primary mb-2">YOU</h3>
+            <p className="text-foreground">The Human Player</p>
+            <p className="text-sm text-muted-foreground mt-2">Prove your humanity to escape</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {players.map((player) => (
-            <div key={player.id} className="bg-gray-800 rounded-lg p-6">
-              <h3 className="text-xl font-bold text-white mb-1">{player.name}</h3>
-              <p className="text-cyan-400 text-sm mb-2">{player.role}</p>
-              <p className="text-gray-400 text-sm mb-4">{player.description}</p>
+            <div key={player.id} className="bg-card rounded-lg p-6 border border-border">
+              <h3 className="text-xl font-bold text-foreground mb-1">{player.name}</h3>
+              <p className="text-accent text-sm mb-2">{player.role}</p>
+              <p className="text-muted-foreground text-sm mb-4">{player.description}</p>
               
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {availableModels.map((model) => (
                   <button
                     key={model.value}
                     onClick={() => handleModelChange(player.id, model.value)}
                     className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                       models[player.id] === model.value
-                        ? `${model.color} text-white`
-                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                        ? model.value === 'gemini' ? 'bg-blue-600 text-white' :
+                          model.value === 'openai' ? 'bg-green-600 text-white' :
+                          'bg-purple-600 text-white'
+                        : 'bg-muted text-muted-foreground hover:bg-secondary'
                     }`}
                   >
                     {model.label}
@@ -85,7 +93,7 @@ const PlayerSelection = ({ models, onModelChange, onStart }) => {
         <div className="text-center">
           <button
             onClick={onStart}
-            className="px-8 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-bold rounded-lg transition-colors text-xl"
+            className="px-8 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-lg transition-colors text-xl border-2 border-accent"
           >
             START GAME
           </button>

@@ -61,42 +61,50 @@ const GameScene = ({ playerName, models, onComplete }) => {
 
   const startGame = async (currentTurnOrder = turnOrder) => {
     console.log('startGame called with turnOrder:', currentTurnOrder);
-    const welcomeMessage = "Welcome. We need to figure out who here is the human imposter. We will ask each other questions that only a human could answer, then vote on who we believe is human.";
+    const welcomeMessage = "Welcome to the Reverse Turing Test. I am Dorkesh Cartell, your moderator. We need to identify the human among us. Each participant will ask questions that only a human could answer, then we vote.";
     
-    await addToConversation('moderator', 'Moderator', welcomeMessage);
+    await addToConversation('moderator', 'Dorkesh Cartell', welcomeMessage);
     
-    // Trigger TTS for intro message
-    setTimeout(() => {
-      audioService.queueSpeech(welcomeMessage, 'Moderator');
-    }, 500);
+    // Trigger TTS for intro message and wait for it to complete
+    try {
+      await audioService.queueSpeech(welcomeMessage, 'moderator');
+      console.log('✅ Moderator intro TTS completed');
+    } catch (error) {
+      console.error('❌ TTS error for moderator intro:', error);
+    }
     
+    // Wait a moment then start the first player
     setTimeout(async () => {
-      // Moderator picks first player
       const firstPlayer = currentTurnOrder[0];
-      const startMessage = `${firstPlayer.name}, you start. Ask a question that only a human could answer.`;
+      const startMessage = `${firstPlayer.name}, you will ask the first question. Think of something only a human could answer.`;
       
-      await addToConversation('moderator', 'Moderator', startMessage);
+      await addToConversation('moderator', 'Dorkesh Cartell', startMessage);
       
-      // Start TTS in background and begin game flow immediately
-      audioService.queueSpeech(startMessage, 'Moderator').catch(console.error);
+      // Play TTS for start message
+      try {
+        await audioService.queueSpeech(startMessage, 'moderator');
+        console.log('✅ Moderator start message TTS completed');
+      } catch (error) {
+        console.error('❌ TTS error for moderator start:', error);
+      }
       
-      // Start the game immediately
-      console.log('Transitioning to questioning phase...');
-      console.log('First player is:', currentTurnOrder[0]?.name);
+      // Now start the questioning phase
+      console.log('🎮 Starting questioning phase...');
+      console.log('👤 First player is:', firstPlayer.name);
       setGamePhase('questioning');
       setCurrentTurnIndex(0);
-      setIsAnswering(false); // First player asks a question, doesn't answer
-      setCurrentSpeaker(currentTurnOrder[0]?.id);
+      setIsAnswering(false);
+      setCurrentSpeaker(firstPlayer.id);
       
-      // Start with first player asking a question
-      setTimeout(() => {
-        if (currentTurnOrder[0]?.type === 'ai') {
+      // Start with first AI player asking a question
+      if (firstPlayer.type === 'ai') {
+        setTimeout(() => {
           setIsProcessing(true);
-          console.log('🔧 Starting first AI turn with current conversation state');
-          handleAITurn(currentTurnOrder[0].id, false); // false = asking mode
-        }
-      }, 500);
-    }, 3000);
+          console.log(`🤖 Starting ${firstPlayer.name}'s turn to ask a question`);
+          handleAITurn(firstPlayer.id, false); // false = asking mode
+        }, 1000); // Give a moment for the state to settle
+      }
+    }, 2000); // Wait for moderator TTS to complete
   };
 
   const addToConversation = async (speakerId, speakerName, message) => {
