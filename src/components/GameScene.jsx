@@ -489,6 +489,41 @@ Reply with: "I vote for [name]" and briefly explain your reasoning in 1-2 senten
     }, 800);
   };
 
+  const startNextQuestionRound = async () => {
+    console.log(`\n🔄 STARTING ROUND ${gameRound + 1} of ${maxRounds}`);
+    
+    // Reset votes for the new round
+    setVotes({});
+    setVotingIndex(0);
+    
+    // Increment round counter
+    setGameRound(prev => prev + 1);
+    
+    // Moderator announces next round
+    const nextRoundMessage = `Round ${gameRound + 1}: Let's continue with more questions. Everyone will ask and answer again.`;
+    await addToConversation('moderator', 'Moderator', nextRoundMessage);
+    
+    // Start TTS in background
+    audioService.queueSpeech(nextRoundMessage, 'Moderator').catch(console.error);
+    
+    setTimeout(() => {
+      // Reset to questioning phase with first AI player
+      setGamePhase('questioning');
+      setCurrentTurnIndex(0);
+      setIsAnswering(false); // First player asks a question
+      setCurrentSpeaker(turnOrder[0].id);
+      
+      // Start with first AI asking a question
+      setTimeout(() => {
+        if (turnOrder[0]?.type === 'ai') {
+          setIsProcessing(true);
+          console.log(`🔧 Starting round ${gameRound + 1} with ${turnOrder[0].name}`);
+          handleAITurn(turnOrder[0].id, false); // false = asking mode
+        }
+      }, 500);
+    }, 1500);
+  };
+
   const handleFinalResults = async () => {
     // Calculate vote results
     const voteCount = {};
