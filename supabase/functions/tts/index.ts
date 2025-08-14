@@ -10,6 +10,7 @@ const corsHeaders = {
 // Voice mapping for different character types
 const voiceMapping: Record<string, string> = {
   'moderator': '9BWtsMINqrJLrRacOk9x', // Aria - clear, neutral (Dorkesh Cartel)
+  'Dorkesh Cartel': '9BWtsMINqrJLrRacOk9x', // Aria - clear, neutral (Dorkesh Cartel)
   'Elongated Muskett': 'CwhRBWXzGAHq8TQ4Fs17', // Roger - visionary space entrepreneur
   'Wario Amadeuss': 'TX3LPaxmHKxFdv7VOQHJ', // Liam - AI safety philosopher
   'Domis Hassoiboi': 'JBFqnCBsd6RMkjVDRZzb', // George - philosophical chess master

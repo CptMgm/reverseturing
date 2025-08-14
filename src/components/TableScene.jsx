@@ -1,7 +1,142 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, Suspense, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Text, Box, Sphere, Cylinder, MeshReflectorMaterial, RoundedBox, Plane } from '@react-three/drei';
+import { Text, Box, Sphere, Cylinder, MeshReflectorMaterial, RoundedBox, Plane, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import readyPlayerMeService from '../services/readyPlayerMeService';
+
+// Ready Player Me Avatar Component  
+const Avatar = ({ playerId, position, rotation, scale = 1, isSpeaking }) => {
+  const avatarRef = useRef();
+  const [avatarUrl, setAvatarUrl] = useState('https://models.readyplayer.me/689d222db09df363fd10ef30.glb'); // Start with default
+  
+  // Get character-specific avatar URL
+  useEffect(() => {
+    const loadAvatarUrl = async () => {
+      try {
+        console.log(`🎭 Loading avatar for ${playerId}...`);
+        const url = await readyPlayerMeService.generateAvatarUrl(playerId);
+        setAvatarUrl(url);
+        console.log(`✅ Avatar URL set for ${playerId}: ${url}`);
+      } catch (error) {
+        console.error(`❌ Failed to load avatar for ${playerId}:`, error);
+        // Keep the default URL
+      }
+    };
+    
+    if (playerId) {
+      loadAvatarUrl();
+    }
+  }, [playerId]);
+  
+  // Always call useGLTF with a URL (React hooks rule)
+  const { scene, error } = useGLTF(avatarUrl);
+  
+  console.log(`🎯 GLTF state for ${playerId}:`, { scene: !!scene, error: !!error, avatarUrl });
+  
+  // Clone the scene to avoid conflicts with multiple instances
+  const clonedScene = useMemo(() => {
+    if (scene) {
+      const cloned = scene.clone();
+      console.log('Ready Player Me avatar loaded successfully');
+      
+      // Ensure the avatar is properly positioned and scaled
+      cloned.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          
+          // Improve material properties for better lighting
+          if (child.material) {
+            child.material.needsUpdate = true;
+          }
+        }
+      });
+      
+      return cloned;
+    }
+    return null;
+  }, [scene]);
+  
+  // Add speaking animation
+  useFrame((state) => {
+    if (avatarRef.current && isSpeaking) {
+      avatarRef.current.rotation.y = rotation[1] + Math.sin(state.clock.elapsedTime * 2) * 0.05;
+      avatarRef.current.position.y = position[1] + Math.sin(state.clock.elapsedTime * 1.5) * 0.02;
+    } else if (avatarRef.current) {
+      avatarRef.current.rotation.y = rotation[1];
+      avatarRef.current.position.y = position[1];
+    }
+  });
+  
+  // Error handling
+  if (error) {
+    console.error(`❌ Error loading Ready Player Me avatar for ${playerId}:`, error);
+    return (
+      <group position={position} rotation={rotation}>
+        <Sphere args={[0.4, 32, 32]} position={[0, 0.9, 0]} castShadow>
+          <meshStandardMaterial 
+            color="#ff6b6b" 
+            emissive={isSpeaking ? '#ff4444' : '#000000'}
+            emissiveIntensity={isSpeaking ? 0.3 : 0}
+          />
+        </Sphere>
+        <RoundedBox args={[0.8, 1.2, 0.3]} radius={0.05} position={[0, 0, 0]} castShadow>
+          <meshStandardMaterial color="#333333" />
+        </RoundedBox>
+        <Text
+          position={[0, 1.5, 0]}
+          fontSize={0.1}
+          color="#ff6b6b"
+          anchorX="center"
+          anchorY="middle"
+        >
+          Avatar Load Error
+        </Text>
+      </group>
+    );
+  }
+  
+  if (!clonedScene) {
+    console.log(`⏳ Ready Player Me avatar scene not ready for ${playerId}, showing loading fallback...`);
+    return (
+      <group position={position} rotation={rotation}>
+        <Sphere args={[0.4, 32, 32]} position={[0, 0.9, 0]} castShadow>
+          <meshStandardMaterial 
+            color="#87CEEB" 
+            emissive={isSpeaking ? '#4169E1' : '#000000'}
+            emissiveIntensity={isSpeaking ? 0.3 : 0}
+          />
+        </Sphere>
+        <RoundedBox args={[0.8, 1.2, 0.3]} radius={0.05} position={[0, 0, 0]} castShadow>
+          <meshStandardMaterial color="#333333" />
+        </RoundedBox>
+        <Text
+          position={[0, 1.5, 0]}
+          fontSize={0.1}
+          color="#87CEEB"
+          anchorX="center"
+          anchorY="middle"
+        >
+          GLTF Loading...
+        </Text>
+      </group>
+    );
+  }
+  
+  return (
+    <primitive
+      ref={avatarRef}
+      object={clonedScene}
+      position={position}
+      rotation={rotation}
+      scale={[scale, scale, scale]}
+      castShadow
+      receiveShadow
+    />
+  );
+};
+
+// Avatar URLs will be loaded dynamically per character
 
 const TableScene = ({ players, currentSpeaker }) => {
   const speakerLightRef = useRef();
@@ -24,42 +159,54 @@ const TableScene = ({ players, currentSpeaker }) => {
     return new THREE.CanvasTexture(canvas);
   }, []);
 
-  // Realistic boardroom seating around oval table
-  const getPlayerPosition = (index, total, isHuman) => {
+  // Round poker table seating arrangement
+  const getPlayerPosition = (index, total, isHuman, playerId) => {
     if (isHuman) return null;
     
-    const aiIndex = index > 0 ? index - 1 : index;
-    
-    // Natural oval table seating - closer to table, proper angles
-    const tableRadius = 4.5;
+    // Round table seating - evenly spaced around circle
+    const tableRadius = 3.0;
     const seatHeight = 1.0;
+    const tableCenter = [0, 0, -3.5];
     
-    // Four seats around oval table at natural positions
-    const angles = [
-      -0.6,  // Left side (closer to front)
-      0.6,   // Right side (closer to front)
-      -2.5,  // Left back
-      2.5,   // Right back
-    ];
+    // Total players around table: 6 (human + moderator + 4 AIs)
+    const totalSeats = 6;
+    const angleStep = (2 * Math.PI) / totalSeats;
     
-    const angle = angles[aiIndex] || 0;
+    // Seat assignments around the table (starting from human at angle 0)
+    const seatAngles = {
+      'human': 0,           // Bottom (closest to camera)
+      'moderator': Math.PI, // Top (dealer position, opposite human)
+      'player1': Math.PI * 2/3,    // Upper left
+      'player2': Math.PI * 4/3,    // Lower left  
+      'player3': Math.PI * 1/3,    // Upper right
+      'player4': Math.PI * 5/3,    // Lower right
+    };
+    
+    const angle = seatAngles[playerId] || 0;
     
     return [
-      Math.sin(angle) * tableRadius,
+      Math.sin(angle) * tableRadius + tableCenter[0],
       seatHeight,
-      Math.cos(angle) * tableRadius - 3.5  // Offset table center
+      Math.cos(angle) * tableRadius + tableCenter[2]
     ];
   };
   
-  // Get rotation for player to face inward toward table
-  const getPlayerRotation = (index, total, isHuman) => {
+  // Get rotation for player to face inward toward table center
+  const getPlayerRotation = (index, total, isHuman, playerId) => {
     if (isHuman) return [0, 0, 0];
     
-    const aiIndex = index > 0 ? index - 1 : index;
-    const angles = [-0.6, 0.6, -2.5, 2.5];
-    const angle = angles[aiIndex] || 0;
+    // Same seat angles as positioning
+    const seatAngles = {
+      'moderator': Math.PI, // Top (dealer position)
+      'player1': Math.PI * 2/3,    // Upper left
+      'player2': Math.PI * 4/3,    // Lower left  
+      'player3': Math.PI * 1/3,    // Upper right
+      'player4': Math.PI * 5/3,    // Lower right
+    };
     
-    // Face toward center of table
+    const angle = seatAngles[playerId] || 0;
+    
+    // Face toward center of table (add PI to face inward)
     return [0, angle + Math.PI, 0];
   };
 
@@ -69,6 +216,8 @@ const TableScene = ({ players, currentSpeaker }) => {
     }
   });
 
+  console.log('TableScene rendering with players:', players);
+  
   return (
     <group>
       {/* Cinematic Lighting System */}
@@ -264,11 +413,11 @@ const TableScene = ({ players, currentSpeaker }) => {
         />
       </mesh>
       
-      {/* Premium Oval Conference Table */}
+      {/* Premium Round Poker Table */}
       <group position={[0, 0.75, -3.5]}>
-        {/* Elegant oval table surface - realistic proportions */}
+        {/* Round table surface - perfect for 6-player poker setup */}
         <mesh position={[0, 0, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[5.5, 5.5, 0.25, 64]} />
+          <cylinderGeometry args={[5.0, 5.0, 0.25, 64]} />
           <meshStandardMaterial 
             color="#2d1810"
             metalness={0.2}
@@ -279,8 +428,8 @@ const TableScene = ({ players, currentSpeaker }) => {
         </mesh>
         
         {/* Wood grain detail ring */}
-        <mesh position={[0, 0.01, 0]}>
-          <cylinderGeometry args={[5.2, 5.2, 0.23, 64]} />
+        <mesh position={[0, 0.02, 0]}>
+          <cylinderGeometry args={[4.7, 4.7, 0.22, 64]} />
           <meshStandardMaterial 
             color="#3d2420"
             metalness={0.15}
@@ -288,19 +437,19 @@ const TableScene = ({ players, currentSpeaker }) => {
           />
         </mesh>
         
-        {/* Leather inlay center */}
-        <mesh position={[0, 0.13, 0]}>
-          <cylinderGeometry args={[3.5, 3.5, 0.03, 64]} />
+        {/* Poker felt center */}
+        <mesh position={[0, 0.14, 0]}>
+          <cylinderGeometry args={[3.2, 3.2, 0.02, 64]} />
           <meshStandardMaterial 
-            color="#1a2a1a"
-            roughness={0.8}
-            metalness={0.1}
+            color="#1a4a1a"
+            roughness={0.9}
+            metalness={0.05}
           />
         </mesh>
         
         {/* Refined table edge */}
         <mesh position={[0, -0.1, 0]}>
-          <torusGeometry args={[5.5, 0.15, 16, 100]} />
+          <torusGeometry args={[5.0, 0.15, 16, 100]} />
           <meshStandardMaterial 
             color="#1a0f08"
             metalness={0.3}
@@ -379,27 +528,9 @@ const TableScene = ({ players, currentSpeaker }) => {
         </group>
       </group>
       
-      {/* Human's Executive Chair (First Person View) */}
-      <group position={[0, 0, 1.8]}>
-        {/* Premium seat cushion */}
-        <RoundedBox args={[1.3, 0.15, 1.3]} radius={0.08} position={[0, 0.75, 0]}>
-          <meshStandardMaterial 
-            color="#2a2a2a" 
-            roughness={0.4}
-            metalness={0.05}
-          />
-        </RoundedBox>
-        
-        {/* Executive backrest */}
-        <RoundedBox args={[1.3, 1.7, 0.15]} radius={0.08} position={[0, 1.6, -0.58]}>
-          <meshStandardMaterial 
-            color="#2a2a2a" 
-            roughness={0.4}
-            metalness={0.05}
-          />
-        </RoundedBox>
-        
-        {/* Comfortable armrests - visible in periphery */}
+      {/* Human's Executive Chair (First Person View) - Only show parts visible from seated position */}
+      <group position={[0, 0, 1.8]}>        
+        {/* Show only armrests visible in peripheral vision */}
         <RoundedBox args={[0.22, 0.6, 0.9]} radius={0.05} position={[0.65, 1.15, -0.05]}>
           <meshStandardMaterial color="#3a3a3a" roughness={0.3} />
         </RoundedBox>
@@ -407,303 +538,101 @@ const TableScene = ({ players, currentSpeaker }) => {
           <meshStandardMaterial color="#3a3a3a" roughness={0.3} />
         </RoundedBox>
         
-        {/* Premium chrome details */}
+        {/* Chrome armrest details */}
         <Cylinder args={[0.05, 0.05, 0.5]} position={[0.65, 0.95, -0.05]} rotation={[0, 0, Math.PI/2]}>
           <meshStandardMaterial color="#c8c8c8" metalness={0.95} roughness={0.03} />
         </Cylinder>
         <Cylinder args={[0.05, 0.05, 0.5]} position={[-0.65, 0.95, -0.05]} rotation={[0, 0, Math.PI/2]}>
           <meshStandardMaterial color="#c8c8c8" metalness={0.95} roughness={0.03} />
         </Cylinder>
-        
-        {/* Chair base - visible below */}
-        <Cylinder args={[0.45, 0.45, 0.1, 32]} position={[0, 0.3, 0]}>
-          <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.2} />
-        </Cylinder>
-        
-        {/* Chrome pillar */}
-        <Cylinder args={[0.08, 0.1, 0.6, 16]} position={[0, 0.45, 0]}>
-          <meshStandardMaterial color="#c8c8c8" metalness={0.95} roughness={0.03} />
-        </Cylinder>
       </group>
       
-      {/* AI Participants - Naturally Positioned */}
+      {/* AI Participants and Moderator - Ready Player Me Avatars */}
       {players.map((player, index) => {
         if (player.type === 'human') return null;
         
-        const position = getPlayerPosition(index, players.length, false);
-        const rotation = getPlayerRotation(index, players.length, false);
+        const position = getPlayerPosition(index, players.length, false, player.id);
+        const rotation = getPlayerRotation(index, players.length, false, player.id);
         if (!position) return null;
         
         const isSpeaking = currentSpeaker === player.id;
         
-        // Character-specific appearances
-        const getCharacterAppearance = (playerId) => {
-          switch(playerId) {
-            case 'player1': // Elongated Muskett
-              return {
-                skinTone: '#f5deb3',
-                suitColor: '#1a1a2a', // Dark blue suit
-                tieColor: '#ff4500', // Orange tie (SpaceX vibes)
-                hairColor: '#4a3a2a',
-                eyeColor: '#4682b4',
-                hairstyle: 'swept', // Swept back hair
-                accessories: 'futuristic' // Futuristic glasses
-              };
-            case 'player2': // Wario Amadeuss
-              return {
-                skinTone: '#fdbcb4',
-                suitColor: '#2a2a3a', // Dark gray suit
-                tieColor: '#4b0082', // Purple tie (AI safety)
-                hairColor: '#3a3a3a',
-                eyeColor: '#8b4513',
-                hairstyle: 'neat', // Well-groomed
-                accessories: 'glasses' // Intellectual glasses
-              };
-            case 'player3': // Domis Hassoiboi
-              return {
-                skinTone: '#d4a574',
-                suitColor: '#1a2a1a', // Dark green suit
-                tieColor: '#2f4f4f', // Dark slate gray (chess board)
-                hairColor: '#2a2a2a',
-                eyeColor: '#2f4f2f',
-                hairstyle: 'short', // Short neat hair
-                accessories: 'none'
-              };
-            case 'player4': // Scan Ctrl+Altman
-              return {
-                skinTone: '#ffe4c4',
-                suitColor: '#000033', // Navy blue suit (OpenAI)
-                tieColor: '#00ff00', // Bright green (AGI acceleration)
-                hairColor: '#5a4a3a',
-                eyeColor: '#708090',
-                hairstyle: 'casual', // Casual tech CEO
-                accessories: 'none'
-              };
-            default:
-              return {
-                skinTone: '#fdbcb4',
-                suitColor: '#2a2a2a',
-                tieColor: '#8b0000',
-                hairColor: '#3a3a3a',
-                eyeColor: '#4a4a4a',
-                hairstyle: 'normal',
-                accessories: 'none'
-              };
-          }
-        };
-        
-        const appearance = getCharacterAppearance(player.id);
-        
         return (
-          <group key={player.id} position={position} rotation={rotation}>
-            {/* Premium executive chair - properly scaled */}
-            <group position={[0, -0.75, 0.3]}>
-              {/* Seat cushion */}
-              <RoundedBox args={[1.1, 0.12, 1.0]} radius={0.06} position={[0, 0, 0]}>
-                <meshStandardMaterial 
-                  color="#2a2a2a" 
-                  roughness={0.4}
-                  metalness={0.05}
-                />
-              </RoundedBox>
-              
-              {/* High backrest */}
-              <RoundedBox args={[1.1, 1.5, 0.12]} radius={0.06} position={[0, 0.8, -0.44]}>
-                <meshStandardMaterial 
-                  color="#2a2a2a" 
-                  roughness={0.4}
-                  metalness={0.05}
-                />
-              </RoundedBox>
-              
-              {/* Padded armrests */}
-              <RoundedBox args={[0.18, 0.35, 0.6]} radius={0.03} position={[0.54, 0.2, -0.05]}>
-                <meshStandardMaterial color="#3a3a3a" roughness={0.3} />
-              </RoundedBox>
-              <RoundedBox args={[0.18, 0.35, 0.6]} radius={0.03} position={[-0.54, 0.2, -0.05]}>
-                <meshStandardMaterial color="#3a3a3a" roughness={0.3} />
-              </RoundedBox>
-              
-              {/* Chair base and wheels */}
-              <Cylinder args={[0.4, 0.4, 0.08, 32]} position={[0, -0.4, 0]}>
-                <meshStandardMaterial color="#1a1a1a" metalness={0.7} roughness={0.2} />
-              </Cylinder>
-              
-              {/* Chrome pillar */}
-              <Cylinder args={[0.06, 0.08, 0.5, 16]} position={[0, -0.25, 0]}>
-                <meshStandardMaterial color="#c0c0c0" metalness={0.95} roughness={0.05} />
-              </Cylinder>
+          <group key={player.id}>
+            {/* Premium executive chair */}
+            <group position={position}>
+              <group position={[0, -0.75, 0.3]}>
+                {/* Seat cushion */}
+                <RoundedBox args={[1.1, 0.12, 1.0]} radius={0.06} position={[0, 0, 0]}>
+                  <meshStandardMaterial 
+                    color="#2a2a2a" 
+                    roughness={0.4}
+                    metalness={0.05}
+                  />
+                </RoundedBox>
+                
+                {/* High backrest */}
+                <RoundedBox args={[1.1, 1.5, 0.12]} radius={0.06} position={[0, 0.8, -0.44]}>
+                  <meshStandardMaterial 
+                    color="#2a2a2a" 
+                    roughness={0.4}
+                    metalness={0.05}
+                  />
+                </RoundedBox>
+                
+                {/* Padded armrests */}
+                <RoundedBox args={[0.18, 0.35, 0.6]} radius={0.03} position={[0.54, 0.2, -0.05]}>
+                  <meshStandardMaterial color="#3a3a3a" roughness={0.3} />
+                </RoundedBox>
+                <RoundedBox args={[0.18, 0.35, 0.6]} radius={0.03} position={[-0.54, 0.2, -0.05]}>
+                  <meshStandardMaterial color="#3a3a3a" roughness={0.3} />
+                </RoundedBox>
+                
+                {/* Chair base and wheels */}
+                <Cylinder args={[0.4, 0.4, 0.08, 32]} position={[0, -0.4, 0]}>
+                  <meshStandardMaterial color="#1a1a1a" metalness={0.7} roughness={0.2} />
+                </Cylinder>
+                
+                {/* Chrome pillar */}
+                <Cylinder args={[0.06, 0.08, 0.5, 16]} position={[0, -0.25, 0]}>
+                  <meshStandardMaterial color="#c0c0c0" metalness={0.95} roughness={0.05} />
+                </Cylinder>
+              </group>
             </group>
             
-            {/* Professional Business Executive */}
-            <group position={[0, 0, 0]}>
-              {/* Well-fitted suit jacket */}
-              <RoundedBox args={[0.95, 1.25, 0.42]} radius={0.06} position={[0, 0, 0]}>
-                <meshStandardMaterial 
-                  color={appearance.suitColor}
-                  roughness={0.6}
-                  metalness={0.08}
-                />
-              </RoundedBox>
-              
-              {/* Dress shirt with collar */}
-              <RoundedBox args={[0.7, 0.9, 0.38]} radius={0.03} position={[0, 0.15, 0.02]}>
-                <meshStandardMaterial color="#fafafa" roughness={0.7} />
-              </RoundedBox>
-              
-              {/* Shirt collar detail */}
-              <RoundedBox args={[0.25, 0.15, 0.35]} radius={0.02} position={[0, 0.55, 0.04]}>
-                <meshStandardMaterial color="#ffffff" roughness={0.8} />
-              </RoundedBox>
-              
-              {/* Professional tie */}
-              <RoundedBox args={[0.1, 0.65, 0.02]} radius={0.01} position={[0, 0.15, 0.21]}>
-                <meshStandardMaterial 
-                  color={appearance.tieColor}
-                  metalness={0.2}
-                  roughness={0.7}
-                />
-              </RoundedBox>
-              
-              {/* Suit lapels */}
-              <RoundedBox args={[0.08, 0.3, 0.4]} radius={0.02} position={[0.2, 0.4, 0.01]}>
-                <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
-              </RoundedBox>
-              <RoundedBox args={[0.08, 0.3, 0.4]} radius={0.02} position={[-0.2, 0.4, 0.01]}>
-                <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
-              </RoundedBox>
-              
-              {/* Realistic head */}
-              <Sphere args={[0.4, 32, 32]} position={[0, 0.9, 0]} castShadow>
-                <meshStandardMaterial 
-                  color={appearance.skinTone}
-                  emissive={isSpeaking ? '#ffaa77' : '#000000'}
-                  emissiveIntensity={isSpeaking ? 0.2 : 0}
-                  roughness={0.8}
-                  metalness={0.02}
-                />
-              </Sphere>
-              
-              {/* Detailed facial features */}
-              <group position={[0, 0.9, 0]}>
-                {/* Eyes with depth */}
-                <Sphere args={[0.08, 16, 16]} position={[0.18, 0.05, 0.35]}>
-                  <meshStandardMaterial color="#ffffff" roughness={0.1} />
-                </Sphere>
-                <Sphere args={[0.08, 16, 16]} position={[-0.18, 0.05, 0.35]}>
-                  <meshStandardMaterial color="#ffffff" roughness={0.1} />
-                </Sphere>
-                <Sphere args={[0.04, 16, 16]} position={[0.18, 0.05, 0.38]}>
-                  <meshStandardMaterial color={appearance.eyeColor} />
-                </Sphere>
-                <Sphere args={[0.04, 16, 16]} position={[-0.18, 0.05, 0.38]}>
-                  <meshStandardMaterial color={appearance.eyeColor} />
-                </Sphere>
-                <Sphere args={[0.02, 8, 8]} position={[0.18, 0.05, 0.4]}>
-                  <meshStandardMaterial color="#000000" />
-                </Sphere>
-                <Sphere args={[0.02, 8, 8]} position={[-0.18, 0.05, 0.4]}>
-                  <meshStandardMaterial color="#000000" />
-                </Sphere>
-                
-                {/* Eyebrows */}
-                <RoundedBox args={[0.12, 0.02, 0.03]} radius={0.005} position={[0.18, 0.15, 0.36]}>
-                  <meshStandardMaterial color={appearance.hairColor} roughness={1} />
-                </RoundedBox>
-                <RoundedBox args={[0.12, 0.02, 0.03]} radius={0.005} position={[-0.18, 0.15, 0.36]}>
-                  <meshStandardMaterial color={appearance.hairColor} roughness={1} />
-                </RoundedBox>
-                
-                {/* Professional nose */}
-                <RoundedBox args={[0.06, 0.12, 0.1]} radius={0.02} position={[0, -0.02, 0.38]}>
-                  <meshStandardMaterial color={appearance.skinTone} roughness={0.8} />
-                </RoundedBox>
-                
-                {/* Mouth */}
-                <RoundedBox args={[0.14, 0.03, 0.02]} radius={0.01} position={[0, -0.12, 0.37]}>
-                  <meshStandardMaterial color="#d08080" roughness={0.6} />
-                </RoundedBox>
-                
-                {/* Character-specific hairstyle */}
-                <Sphere args={[0.42, 20, 20]} position={[0, 0.2, -0.08]}>
+            {/* Ready Player Me Avatar with better error handling */}
+            <Suspense fallback={
+              <group position={[position[0], position[1] + 0.9, position[2]]}>
+                <Sphere args={[0.4, 32, 32]} position={[0, 0, 0]} castShadow>
                   <meshStandardMaterial 
-                    color={appearance.hairColor}
-                    roughness={0.9}
+                    color="#f0c674" 
+                    emissive={isSpeaking ? '#ffaa77' : '#000000'}
+                    emissiveIntensity={isSpeaking ? 0.2 : 0}
                   />
                 </Sphere>
-                
-                {/* Character-specific accessories */}
-                {appearance.accessories === 'glasses' && (
-                  <>
-                    {/* Glasses frame */}
-                    <RoundedBox args={[0.08, 0.08, 0.02]} radius={0.005} position={[0.18, 0.05, 0.42]}>
-                      <meshStandardMaterial color="#1a1a1a" metalness={0.5} roughness={0.3} />
-                    </RoundedBox>
-                    <RoundedBox args={[0.08, 0.08, 0.02]} radius={0.005} position={[-0.18, 0.05, 0.42]}>
-                      <meshStandardMaterial color="#1a1a1a" metalness={0.5} roughness={0.3} />
-                    </RoundedBox>
-                    {/* Bridge */}
-                    <Cylinder args={[0.01, 0.01, 0.08, 8]} position={[0, 0.05, 0.42]} rotation={[0, 0, Math.PI/2]}>
-                      <meshStandardMaterial color="#1a1a1a" metalness={0.5} roughness={0.3} />
-                    </Cylinder>
-                  </>
-                )}
-                
-                {appearance.accessories === 'futuristic' && (
-                  <>
-                    {/* Futuristic glasses (for Elongated Muskett) */}
-                    <RoundedBox args={[0.12, 0.06, 0.02]} radius={0.008} position={[0.18, 0.05, 0.42]}>
-                      <meshStandardMaterial color="#ff4500" metalness={0.8} roughness={0.1} emissive="#ff4500" emissiveIntensity={0.2} />
-                    </RoundedBox>
-                    <RoundedBox args={[0.12, 0.06, 0.02]} radius={0.008} position={[-0.18, 0.05, 0.42]}>
-                      <meshStandardMaterial color="#ff4500" metalness={0.8} roughness={0.1} emissive="#ff4500" emissiveIntensity={0.2} />
-                    </RoundedBox>
-                    {/* Futuristic bridge */}
-                    <Cylinder args={[0.015, 0.015, 0.08, 8]} position={[0, 0.05, 0.42]} rotation={[0, 0, Math.PI/2]}>
-                      <meshStandardMaterial color="#ff4500" metalness={0.8} roughness={0.1} />
-                    </Cylinder>
-                  </>
-                )}
-              </group>
-              
-              {/* Natural arm positioning */}
-              <group>
-                {/* Right arm - resting on table */}
-                <RoundedBox args={[0.18, 0.5, 0.18]} radius={0.05} position={[0.5, 0.2, 0.15]} rotation={[0.3, 0, -0.15]}>
-                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
+                <RoundedBox args={[0.8, 1.2, 0.3]} radius={0.05} position={[0, -0.8, 0]} castShadow>
+                  <meshStandardMaterial color="#333333" />
                 </RoundedBox>
-                <RoundedBox args={[0.16, 0.4, 0.16]} radius={0.04} position={[0.75, -0.15, 0.45]} rotation={[0.8, 0, -0.1]}>
-                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
-                </RoundedBox>
-                
-                {/* Left arm - natural pose */}
-                <RoundedBox args={[0.18, 0.5, 0.18]} radius={0.05} position={[-0.5, 0.2, 0.15]} rotation={[0.3, 0, 0.15]}>
-                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
-                </RoundedBox>
-                <RoundedBox args={[0.16, 0.4, 0.16]} radius={0.04} position={[-0.75, -0.15, 0.45]} rotation={[0.8, 0, 0.1]}>
-                  <meshStandardMaterial color={appearance.suitColor} roughness={0.6} />
-                </RoundedBox>
-                
-                {/* Hands positioned naturally */}
-                <Sphere args={[0.11, 16, 16]} position={[0.9, -0.45, 0.65]}>
-                  <meshStandardMaterial color={appearance.skinTone} roughness={0.8} />
+                {/* Eyes */}
+                <Sphere args={[0.06, 16, 16]} position={[0.15, 0.1, 0.35]} castShadow>
+                  <meshStandardMaterial color="#000000" />
                 </Sphere>
-                <Sphere args={[0.11, 16, 16]} position={[-0.9, -0.45, 0.65]}>
-                  <meshStandardMaterial color={appearance.skinTone} roughness={0.8} />
+                <Sphere args={[0.06, 16, 16]} position={[-0.15, 0.1, 0.35]} castShadow>
+                  <meshStandardMaterial color="#000000" />
                 </Sphere>
-                
-                {/* Shirt cuffs */}
-                <Cylinder args={[0.09, 0.09, 0.06, 16]} position={[0.9, -0.35, 0.55]} rotation={[Math.PI/2, 0, 0]}>
-                  <meshStandardMaterial color="#ffffff" roughness={0.8} />
-                </Cylinder>
-                <Cylinder args={[0.09, 0.09, 0.06, 16]} position={[-0.9, -0.35, 0.55]} rotation={[Math.PI/2, 0, 0]}>
-                  <meshStandardMaterial color="#ffffff" roughness={0.8} />
-                </Cylinder>
               </group>
-            </group>
+            }>
+              <Avatar 
+                playerId={player.id}
+                position={[position[0], position[1] + 0.2, position[2]]}
+                rotation={rotation}
+                scale={1.0}
+                isSpeaking={isSpeaking}
+              />
+            </Suspense>
             
             {/* Professional nameplate on table */}
-            <group position={[0, -0.61, 1.8]} rotation={[-Math.PI/2, 0, 0]}>
+            <group position={[position[0], position[1] - 0.61, position[2] + 1.8]} rotation={[-Math.PI/2, 0, 0]}>
               <RoundedBox args={[1.6, 0.08, 0.3]} radius={0.02}>
                 <meshStandardMaterial 
                   color="#2a2a2a" 
@@ -723,9 +652,34 @@ const TableScene = ({ players, currentSpeaker }) => {
               </Text>
             </group>
             
+            {/* Floating name label above head */}
+            <group position={[position[0], position[1] + 3.2, position[2]]}>
+              {/* Background for better contrast */}
+              <RoundedBox args={[player.name.length * 0.12 + 0.4, 0.3, 0.05]} radius={0.02}>
+                <meshStandardMaterial 
+                  color="#000000" 
+                  transparent 
+                  opacity={0.8}
+                  emissive="#000000"
+                  emissiveIntensity={0.2}
+                />
+              </RoundedBox>
+              <Text
+                position={[0, 0, 0.03]}
+                fontSize={0.25}
+                color="#ffffff"
+                anchorX="center"
+                anchorY="middle"
+                outlineWidth={0.03}
+                outlineColor="#000000"
+              >
+                {player.name}
+              </Text>
+            </group>
+            
             {/* Subtle speaking indicator */}
             {isSpeaking && (
-              <group position={[0, 2.0, 0]}>
+              <group position={[position[0], position[1] + 2.0, position[2]]}>
                 <Text
                   position={[0, 0, 0]}
                   fontSize={0.25}
@@ -750,6 +704,7 @@ const TableScene = ({ players, currentSpeaker }) => {
           </group>
         );
       })}
+      
       
       {/* Ultra-Modern Moderator Display */}
       <group position={[0, 4.5, -9.5]}>

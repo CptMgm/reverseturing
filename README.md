@@ -8,6 +8,9 @@ A game where you must prove you're human to escape a simulation filled with AIs.
    - OPENAI_API_KEY (optional)
    - ANTHROPIC_API_KEY
    - GOOGLE_API_KEY
+   - xAI_API_KEY
+   - ELEVENLABS_API_KEY
+   - SUPABASE_API_KEY
 
 2. Install dependencies:
 ```bash
@@ -19,14 +22,14 @@ npm install
 npm start
 ```
 
-This will start both the backend server (port 3001) and frontend dev server (port 5173).
+This repo is implemted with SUPABASE and no backend.
 
 ## How to Play
 
 1. Enter your name
 2. Read the intro screens
-3. Select which AI models will play against you
-4. Convince the AIs that you're human through conversation
+3. See overview of AIs, enable sound & microphone and click start play
+4. Game starts: Convince the AIs that you're human through conversation
 5. Vote on who you think is human (you can't vote for yourself)
 6. Win if you get the most votes!
 
@@ -44,8 +47,9 @@ IMPORTANT: The AI Characters should always be prompted with their system prompt 
 
 ## Features
 
-- **3D Visualization**: Futuristic boardroom scene with animated characters
-- **AI Personalities**: 4 unique characters 
+- **3D Visualization**: Futuristic boardroom scene
+- **typical persona rendering using three.js: All characters are visualized and displayed in detail using threejs and being very detail oriented making sure everyone recognizes who they are.
+- **AI Personalities**: 4 unique characters modelled after the AI lab leaders (xAI, Anthropic, OpenAI, Deepmind) + Dorkesh Cartel (Dwarkesh Patel) as moderator
 - **Multi-Model Support**: OpenAI GPT-4, , xAI Grok, Anthropic Claude, and Google Gemini
 - **Dynamic Conversation**: Turn-based conversation system with context awareness
 - **Voting Mechanism**: AIs vote on who they think is human
@@ -56,8 +60,9 @@ IMPORTANT: The AI Characters should always be prompted with their system prompt 
 ## Audio Features
 
 ### Text-to-Speech (TTS)
-- Each AI character has a unique voice
+- Each AI character & Moderator has a unique voice
 - Auto-speaks all AI messages
+- New messages (or turns), are depnedent on the previous message being spoken till completion
 - Queue system prevents overlapping speech
 - Adjustable volume and mute controls
 
@@ -66,12 +71,6 @@ IMPORTANT: The AI Characters should always be prompted with their system prompt 
 - Push-to-talk interface
 - Fallback to text input if speech not supported
 - Visual indicators for listening state
-
-### Audio Setup
-Add your ElevenLabs API key to `.env`:
-```
-ELEVENLABS_API_KEY=your_key_here
-```
 
 ## Browser Compatibility
 

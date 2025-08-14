@@ -41,6 +41,11 @@ class AudioService {
           return this.speak(text, speaker); // Retry once
         }
         
+        if (error.message?.includes('Failed to send a request to the Edge Function')) {
+          console.warn('🚨 Edge Function not accessible, using fallback TTS...');
+          return this.speakFallback(text, speaker);
+        }
+        
         throw new Error(`TTS request failed: ${error.message}`);
       }
 
@@ -72,7 +77,9 @@ class AudioService {
         console.error('Audio playback error:', e);
         URL.revokeObjectURL(audioUrl);
         this.currentAudio = null;
-        reject(new Error('Audio playback failed'));
+        // Don't reject, just resolve to continue game flow
+        console.warn('Audio failed, continuing without sound');
+        resolve();
       };
       
       audio.oncanplay = () => {
@@ -81,11 +88,14 @@ class AudioService {
       
       this.currentAudio = audio;
       console.log('Starting audio playback, volume:', this.volume);
+      
+      // Try to play, but don't block game flow if it fails
       audio.play().then(() => {
         console.log('Audio play started');
       }).catch((e) => {
-        console.error('Audio play failed:', e);
-        reject(e);
+        console.warn('Audio play failed (likely needs user interaction):', e.message);
+        // Don't reject, just continue without audio
+        resolve();
       });
     });
   }
@@ -213,6 +223,22 @@ class AudioService {
 
   get isCurrentlyListening() {
     return this.isListening;
+  }
+
+  // Initialize audio context with user interaction
+  async initializeAudio() {
+    try {
+      // Create a silent audio to unlock audio context
+      const silentAudio = new Audio('data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAAHR0cDovL3d3dy5iaWdzb3VuZGJhbmsuY29tL0FEVEQAAAA+AAAGYXJ0aXN0AFNpbGVuY2UgLSBCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwD/80DEAAAAHA3Og==');
+      silentAudio.volume = 0.01;
+      
+      await silentAudio.play();
+      console.log('✅ Audio context initialized');
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Could not initialize audio context:', error);
+      return false;
+    }
   }
 }
 
