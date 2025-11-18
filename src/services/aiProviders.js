@@ -1,5 +1,3 @@
-import { supabase } from '../integrations/supabase/client';
-
 class AIService {
   constructor(provider, playerId = null) {
     this.provider = provider;
@@ -15,36 +13,37 @@ class AIService {
     console.log('\nCONVERSATION HISTORY:');
     console.log(conversationHistory);
     console.log('========================================');
-    
-    // TEMPORARILY DISABLE SUPABASE CALLS FOR DEBUGGING
-    console.warn('🚨 Using fallback responses for debugging (Supabase Edge Functions disabled)');
-    const response = this.getFallbackResponse();
-    console.log(`\n✅ FALLBACK RESPONSE FROM ${this.provider.toUpperCase()} (${this.playerId}):`, response);
-    console.log('============================================\n');
-    return response;
-    
+
     try {
-      const { data, error } = await supabase.functions.invoke('ai-chat', {
-        body: {
+      // Call local server.js backend instead of Supabase
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           provider: this.provider,
           systemPrompt,
           userPrompt: userMessage,
           conversationHistory,
-          maxTokens: 150,
+          maxTokens: 3000,
           temperature: 0.8,
-        },
+        }),
       });
 
-      if (error) {
-        throw new Error(`API request failed: ${error.message}`);
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
       }
+
+      const data = await response.json();
 
       console.log(`\n✅ RESPONSE FROM ${this.provider.toUpperCase()} (${this.playerId}):`, data.response);
       console.log('============================================\n');
       return data.response;
     } catch (error) {
       console.error('AI Service Error:', error);
-      return this.getFallbackResponse();
+      // THROW ERROR - DON'T USE FALLBACK
+      throw new Error(`AI API FAILED for ${this.provider}/${this.playerId}: ${error.message}`);
     }
   }
 

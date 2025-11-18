@@ -1,19 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import audioService from '../services/audioService';
 
-const ConversationPanel = ({ 
-  conversation, 
-  currentSpeaker, 
-  onHumanResponse, 
+const ConversationPanel = ({
+  conversation,
+  currentSpeaker,
+  onHumanResponse,
   isHumanTurn,
   isProcessing,
-  gamePhase 
+  gamePhase
 }) => {
   const [userInput, setUserInput] = useState('');
   const [useVoiceInput, setUseVoiceInput] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceError, setVoiceError] = useState('');
   const messagesEndRef = useRef(null);
+
+  const MAX_CHARACTERS = 230;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -29,6 +31,13 @@ const ConversationPanel = ({
     }
   };
 
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    if (value.length <= MAX_CHARACTERS) {
+      setUserInput(value);
+    }
+  };
+
   const handleVoiceInput = async () => {
     if (!audioService.speechRecognitionAvailable) {
       setVoiceError('Speech recognition not available');
@@ -40,7 +49,8 @@ const ConversationPanel = ({
 
     try {
       const transcript = await audioService.startListening();
-      setUserInput(transcript);
+      // Truncate to max characters if voice input exceeds limit
+      setUserInput(transcript.substring(0, MAX_CHARACTERS));
       setIsListening(false);
     } catch (error) {
       setVoiceError(error.message);
@@ -135,16 +145,24 @@ const ConversationPanel = ({
             </div>
           )}
 
+          {/* Character count */}
+          <div className="text-right text-sm mb-1">
+            <span className={userInput.length >= MAX_CHARACTERS ? 'text-red-400' : 'text-gray-400'}>
+              {userInput.length} / {MAX_CHARACTERS}
+            </span>
+          </div>
+
           {/* Text input form */}
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               type="text"
               value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
+              onChange={handleInputChange}
               placeholder={isProcessing ? "AI is responding..." : useVoiceInput ? "Speak or type your response..." : "Type your response..."}
               className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400"
               disabled={isProcessing || isListening}
               autoFocus={!useVoiceInput}
+              maxLength={MAX_CHARACTERS}
             />
             <button
               type="submit"

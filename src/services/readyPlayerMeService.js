@@ -66,16 +66,104 @@ class ReadyPlayerMeService {
       return this.avatarCache.get(playerId);
     }
 
-    console.log(`🎭 Getting avatar URL for ${playerId}...`);
+    console.log(`🎭 Getting curated avatar for ${playerId}...`);
     
-    // For now, use the same avatar for all characters
-    // TODO: Generate unique avatars with API
+    // Temporarily use the same working avatar URL for all characters to debug the issue
     const avatarUrl = 'https://models.readyplayer.me/689d222db09df363fd10ef30.glb';
     
     this.avatarCache.set(playerId, avatarUrl);
     console.log(`✅ Avatar URL set for ${playerId}: ${avatarUrl}`);
     
     return avatarUrl;
+  }
+
+  // Create avatar with specific configuration using Ready Player Me API
+  async createAvatarWithConfig(config, playerId) {
+    console.log(`🏗️ Creating avatar with config for ${playerId}:`, config);
+    
+    // Use Ready Player Me Studio API to create avatar
+    const createUrl = `${this.baseUrl}/avatars`;
+    
+    const avatarPayload = {
+      partner: 'default',
+      bodyType: config.bodyType || 'average',
+      assets: {
+        hair: this.getHairAsset(config.hairColor),
+        eyes: this.getEyeAsset(config.eyeColor),
+        skin: this.getSkinAsset(config.skinColor),
+        outfit: this.getOutfitAsset(config.outfit),
+        ...(config.accessories?.includes('glasses') && { glasses: this.getGlassesAsset() })
+      }
+    };
+
+    try {
+      const response = await fetch(createUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(avatarPayload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ready Player Me API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ Avatar created for ${playerId}:`, result);
+      
+      return result.modelUrl || result.url;
+    } catch (error) {
+      console.error(`❌ Avatar creation failed for ${playerId}:`, error);
+      throw error;
+    }
+  }
+
+  // Helper methods to map character attributes to Ready Player Me assets
+  getHairAsset(hairColor) {
+    const hairAssets = {
+      '#8B4513': 'hair_brown_01', // Brown
+      '#2F4F4F': 'hair_dark_01',  // Dark gray
+      '#2A2A2A': 'hair_black_01', // Black
+      '#5A4A3A': 'hair_brown_02'  // Light brown
+    };
+    return hairAssets[hairColor] || 'hair_brown_01';
+  }
+
+  getEyeAsset(eyeColor) {
+    const eyeAssets = {
+      '#4682B4': 'eyes_blue_01',   // Blue
+      '#8B4513': 'eyes_brown_01',  // Brown
+      '#2F4F2F': 'eyes_green_01',  // Green
+      '#708090': 'eyes_gray_01',   // Gray
+      '#4A4A4A': 'eyes_dark_01'    // Dark
+    };
+    return eyeAssets[eyeColor] || 'eyes_brown_01';
+  }
+
+  getSkinAsset(skinColor) {
+    const skinAssets = {
+      '#F5DEB3': 'skin_light_01',   // Light
+      '#FDBCB4': 'skin_medium_01',  // Medium
+      '#D4A574': 'skin_olive_01',   // Olive
+      '#FFE4C4': 'skin_fair_01',    // Fair
+      '#D2B48C': 'skin_tan_01'      // Tan
+    };
+    return skinAssets[skinColor] || 'skin_medium_01';
+  }
+
+  getOutfitAsset(outfit) {
+    const outfitAssets = {
+      'business': 'outfit_business_suit',
+      'formal': 'outfit_formal_suit',
+      'casual': 'outfit_casual_01'
+    };
+    return outfitAssets[outfit] || 'outfit_business_suit';
+  }
+
+  getGlassesAsset() {
+    return 'glasses_modern_01';
   }
 
   // Preload all character avatars

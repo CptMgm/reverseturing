@@ -39,6 +39,13 @@ const AudioControls = () => {
     audioService.stopCurrentAudio();
   };
 
+  const handleSkipAudio = () => {
+    audioService.skipCurrentAudio();
+  };
+
+  // Check if in development mode
+  const isDev = import.meta.env.DEV;
+
   return (
     <div className="bg-gray-900 bg-opacity-90 backdrop-blur-sm rounded-lg p-3 flex items-center gap-3">
       {/* Mute/Unmute Button */}
@@ -84,6 +91,15 @@ const AudioControls = () => {
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
             <span className="text-xs text-green-400">Speaking</span>
+            {isDev && (
+              <button
+                onClick={handleSkipAudio}
+                className="px-2 py-0.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors ml-1"
+                title="Skip Audio (Dev Only)"
+              >
+                Skip
+              </button>
+            )}
             <button
               onClick={handleStopAudio}
               className="text-xs text-red-400 hover:text-red-300 ml-1"

@@ -3,19 +3,33 @@ import ConversationPanel from './ConversationPanel';
 import VotingPanel from './VotingPanel';
 import GameStatus from './GameStatus';
 import AudioControls from './AudioControls';
+import InterludeScreen from './InterludeScreen';
 
-const GameUI = ({ 
-  gamePhase, 
-  conversation, 
-  currentSpeaker, 
-  onHumanResponse, 
-  isProcessing, 
-  players, 
-  votes, 
-  onHumanVote 
+const GameUI = ({
+  gamePhase,
+  conversation,
+  currentSpeaker,
+  onHumanResponse,
+  isProcessing,
+  players,
+  onHumanVote,
+  onContinueToVoting,
+  onPlayAnotherRound,
+  currentRound,
+  maxRounds
 }) => {
   return (
     <div className="absolute inset-0 pointer-events-none">
+      {/* Interlude Screen - Full screen overlay */}
+      {gamePhase === 'interlude' && (
+        <InterludeScreen
+          onContinue={onContinueToVoting}
+          onPlayAnotherRound={onPlayAnotherRound}
+          currentRound={currentRound}
+          maxRounds={maxRounds}
+        />
+      )}
+
       <div className="h-full flex flex-col justify-end p-4">
         <div className="pointer-events-auto">
           {(gamePhase === 'questioning' || gamePhase === 'intro') && (
@@ -44,7 +58,6 @@ const GameUI = ({
             <VotingPanel
               players={players.filter(p => p.id !== 'human')}
               onVote={onHumanVote}
-              votes={votes}
             />
           )}
           
@@ -57,8 +70,8 @@ const GameUI = ({
           )}
         </div>
       </div>
-      
-      <GameStatus gamePhase={gamePhase} />
+
+      <GameStatus gamePhase={gamePhase} currentRound={currentRound} />
       
       {/* Audio Controls */}
       <div className="absolute top-4 right-4 pointer-events-auto">

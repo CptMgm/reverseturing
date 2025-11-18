@@ -1,120 +1,226 @@
-
-import { supabase } from '../integrations/supabase/client';
-
 class AudioService {
   constructor() {
     this.audioQueue = [];
     this.isPlaying = false;
     this.currentAudio = null;
+    this.currentResolve = null; // Store the resolve function for skipping
     this.speechRecognition = null;
     this.isMuted = false;
     this.volume = 0.7;
     this.isListening = false;
-    
+
     this.setupSpeechRecognition();
   }
 
-  // Text-to-Speech using ElevenLabs via Supabase Edge Function
+  // Text-to-Speech using ElevenLabs via server.js backend
   async speak(text, speaker = 'moderator') {
+    console.log(`🎙️ speak() called for ${speaker}: "${text.substring(0, 50)}..."`);
+
     if (this.isMuted || !text?.trim()) {
-      console.log('TTS skipped:', this.isMuted ? 'muted' : 'empty text');
+      console.log('⏭️ TTS skipped:', this.isMuted ? 'muted' : 'empty text');
       return Promise.resolve();
     }
-    
-    console.log('TTS request:', { text: text.substring(0, 50) + '...', speaker });
-    
+
+    console.log('📡 Making TTS request to /api/tts...');
+
     try {
-      const { data, error } = await supabase.functions.invoke('tts', {
-        body: {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           text: text.trim(),
           voice: speaker,
           stability: 0.5,
-        },
+        }),
       });
 
-      if (error) {
-        console.error('TTS request failed:', error);
-        
-        if (error.message?.includes('Rate limit')) {
-          console.warn('TTS rate limited, retrying in 2 seconds...');
+      console.log('📡 TTS response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ TTS request failed:', response.status, errorText);
+
+        if (response.status === 429) {
+          console.warn('⏳ TTS rate limited, retrying in 2 seconds...');
           await new Promise(resolve => setTimeout(resolve, 2000));
           return this.speak(text, speaker); // Retry once
         }
-        
-        if (error.message?.includes('Failed to send a request to the Edge Function')) {
-          console.warn('🚨 Edge Function not accessible, using fallback TTS...');
-          return this.speakFallback(text, speaker);
-        }
-        
-        throw new Error(`TTS request failed: ${error.message}`);
+
+        console.warn('🚨 TTS unavailable, using fallback...');
+        return this.speakFallback(text, speaker);
       }
 
-      // The Edge Function returns audio data directly
-      const audioBlob = new Blob([data], { type: 'audio/mpeg' });
+      // Server returns audio/mpeg data directly
+      const audioBlob = await response.blob();
+      console.log('✅ TTS blob received, size:', audioBlob.size);
       const audioUrl = URL.createObjectURL(audioBlob);
-      console.log('TTS success, playing audio');
-      
+      console.log('✅ Audio URL created, calling playAudio()...');
+
       return this.playAudio(audioUrl);
     } catch (error) {
-      console.error('TTS Error:', error);
-      return Promise.resolve(); // Fail silently for better UX
+      console.error('❌ TTS Error:', error);
+      console.warn('🚨 Using fallback TTS due to error');
+      return this.speakFallback(text, speaker); // Use fallback instead of failing silently
     }
+  }
+
+  // Fallback TTS using Web Speech API
+  async speakFallback(text, speaker) {
+    if (this.isMuted || !text?.trim()) {
+      console.log('Fallback TTS skipped:', this.isMuted ? 'muted' : 'empty text');
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      if (!('speechSynthesis' in window)) {
+        console.warn('Speech synthesis not supported, skipping fallback TTS');
+        resolve();
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Try to match character voices with available system voices
+      const voices = speechSynthesis.getVoices();
+      const characterVoice = this.getSystemVoiceForCharacter(speaker, voices);
+      
+      if (characterVoice) {
+        utterance.voice = characterVoice;
+      }
+      
+      utterance.rate = 0.9;
+      utterance.pitch = 1.0;
+      utterance.volume = this.volume;
+
+      utterance.onend = () => {
+        console.log(`✅ Fallback TTS completed for ${speaker}`);
+        resolve();
+      };
+      
+      utterance.onerror = (error) => {
+        console.error('❌ Fallback TTS error:', error);
+        resolve(); // Don't reject, just continue
+      };
+
+      console.log(`🎤 Using fallback TTS for ${speaker}: "${text.substring(0, 50)}..."`);
+      speechSynthesis.speak(utterance);
+    });
+  }
+
+  getSystemVoiceForCharacter(speaker, voices) {
+    const voicePreferences = {
+      'moderator': ['British', 'UK', 'Daniel', 'Alex'],
+      'Dorkesh Cartel': ['British', 'UK', 'Daniel', 'Alex'],
+      'Elongated Muskett': ['US', 'American', 'David', 'Fred'],
+      'Wario Amadeuss': ['British', 'UK', 'Daniel', 'Oliver'],
+      'Domis Hassoiboi': ['British', 'UK', 'Daniel', 'Alex'],
+      'Scan Ctrl+Altman': ['US', 'American', 'David', 'Aaron'],
+    };
+
+    const preferences = voicePreferences[speaker] || ['US', 'American'];
+    
+    for (const pref of preferences) {
+      const voice = voices.find(v => 
+        v.name.includes(pref) || 
+        v.lang.includes('en-US') || 
+        v.lang.includes('en-GB')
+      );
+      if (voice) return voice;
+    }
+
+    return voices.find(v => v.lang.startsWith('en')) || voices[0];
   }
 
   async playAudio(audioUrl) {
     return new Promise((resolve, reject) => {
+      console.log('🔊 playAudio called with URL:', audioUrl.substring(0, 50));
+
       const audio = new Audio(audioUrl);
       audio.volume = this.volume;
-      
+
+      let resolved = false;
+      const safeResolve = () => {
+        if (!resolved) {
+          resolved = true;
+          this.currentResolve = null;
+          resolve();
+        }
+      };
+
+      // Store resolve function so we can call it when skipping
+      this.currentResolve = safeResolve;
+
       audio.onended = () => {
-        console.log('Audio ended');
+        console.log('✅ Audio ended');
         URL.revokeObjectURL(audioUrl);
         this.currentAudio = null;
-        resolve();
+        safeResolve();
       };
-      
+
       audio.onerror = (e) => {
-        console.error('Audio playback error:', e);
+        console.error('❌ Audio playback error:', e);
         URL.revokeObjectURL(audioUrl);
         this.currentAudio = null;
-        // Don't reject, just resolve to continue game flow
-        console.warn('Audio failed, continuing without sound');
-        resolve();
+        console.warn('⚠️ Audio failed, continuing without sound');
+        safeResolve();
       };
-      
+
       audio.oncanplay = () => {
-        console.log('Audio ready to play');
+        console.log('✅ Audio ready to play');
       };
-      
+
       this.currentAudio = audio;
-      console.log('Starting audio playback, volume:', this.volume);
-      
+      console.log('▶️ Starting audio playback, volume:', this.volume);
+
       // Try to play, but don't block game flow if it fails
       audio.play().then(() => {
-        console.log('Audio play started');
+        console.log('✅ Audio play() started successfully');
       }).catch((e) => {
-        console.warn('Audio play failed (likely needs user interaction):', e.message);
-        // Don't reject, just continue without audio
-        resolve();
+        console.warn('⚠️ Audio play() failed (likely needs user interaction):', e.message);
+        // Immediately resolve if play fails
+        safeResolve();
       });
+
+      // Safety timeout - resolve after 30 seconds no matter what
+      setTimeout(() => {
+        if (!resolved) {
+          console.warn('⚠️ Audio playback timeout after 30s, continuing game');
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudio = null;
+          safeResolve();
+        }
+      }, 30000);
     });
   }
 
   // Queue system for managing multiple speakers
   async queueSpeech(text, speaker) {
+    console.log(`📢 queueSpeech() called for ${speaker}, isPlaying: ${this.isPlaying}, queue length: ${this.audioQueue.length}`);
+
     return new Promise((resolve) => {
       const speechPromise = async () => {
-        await this.speak(text, speaker);
+        console.log(`🎬 Starting speech for ${speaker}`);
+        try {
+          await this.speak(text, speaker);
+          console.log(`✅ Speech completed for ${speaker}`);
+        } catch (error) {
+          console.error(`❌ Speech error for ${speaker}:`, error);
+        }
         resolve(); // Resolve when this specific speech is done
       };
-      
+
       if (!this.isPlaying) {
+        console.log(`▶️ No speech playing, starting immediately for ${speaker}`);
         this.isPlaying = true;
         speechPromise().finally(() => {
+          console.log(`🏁 Speech promise finished for ${speaker}`);
           this.isPlaying = false;
           this.processQueue();
         });
       } else {
+        console.log(`⏸️ Speech in progress, queuing ${speaker}`);
         this.audioQueue.push(() => speechPromise().finally(() => resolve()));
       }
     });
@@ -141,6 +247,35 @@ class AudioService {
     }
     this.audioQueue = [];
     this.isPlaying = false;
+  }
+
+  skipCurrentAudio() {
+    console.log('⏭️ Skipping current audio');
+
+    // Stop the audio immediately
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.currentTime = 0;
+      this.currentAudio = null;
+    }
+
+    // If using speech synthesis, cancel it
+    if ('speechSynthesis' in window && speechSynthesis.speaking) {
+      speechSynthesis.cancel();
+    }
+
+    // Immediately resolve the promise to unblock game flow
+    if (this.currentResolve) {
+      console.log('✅ Resolving audio promise immediately');
+      this.currentResolve();
+      this.currentResolve = null;
+    }
+
+    // Mark as not playing so next audio can start
+    this.isPlaying = false;
+
+    // Process any queued audio
+    this.processQueue();
   }
 
   // Speech Recognition setup
@@ -227,13 +362,25 @@ class AudioService {
 
   // Initialize audio context with user interaction
   async initializeAudio() {
+    console.log('🔊 initializeAudio() called');
     try {
       // Create a silent audio to unlock audio context
       const silentAudio = new Audio('data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAAHR0cDovL3d3dy5iaWdzb3VuZGJhbmsuY29tL0FEVEQAAAA+AAAGYXJ0aXN0AFNpbGVuY2UgLSBCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwD/80DEAAAAHA3Og==');
       silentAudio.volume = 0.01;
-      
-      await silentAudio.play();
-      console.log('✅ Audio context initialized');
+
+      console.log('🔊 Attempting to play silent audio...');
+      // Don't await - just try to play and ignore if it fails
+      silentAudio.play()
+        .then(() => {
+          console.log('✅ Audio context initialized successfully');
+        })
+        .catch((error) => {
+          console.warn('⚠️ Silent audio play failed (autoplay blocked):', error.message);
+          // This is fine - audio will work once user interacts
+        });
+
+      // Always return true immediately - don't wait for play() to resolve
+      console.log('✅ Audio initialization completed (may need user interaction for autoplay)');
       return true;
     } catch (error) {
       console.warn('⚠️ Could not initialize audio context:', error);

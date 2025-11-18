@@ -11,36 +11,47 @@ const GameScene = ({ playerName, onComplete }) => {
     gamePhase,
     currentSpeaker,
     conversation,
-    votes,
     isProcessing,
     players,
+    currentRound,
+    maxRounds,
     handleHumanResponse,
-    handleHumanVote
+    handleHumanVote,
+    startVotingPhase,
+    startAnotherRound
   } = useGameLogic(playerName, onComplete);
 
 
   return (
-    <div className="min-h-screen bg-black relative">
+    <div className="min-h-screen bg-white relative">
       {/* 3D Scene */}
       <div className="absolute inset-0">
-        <Canvas shadows={{ enabled: true, type: THREE.PCFSoftShadowMap }}>
-          <PerspectiveCamera makeDefault position={[0, 2.2, 1.5]} fov={70} />
-          <OrbitControls 
-            enablePan={false} 
-            enableZoom={false}
+        <Canvas
+          shadows
+          dpr={[1, 2]}
+          gl={{
+            antialias: true,
+            toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 1.0
+          }}
+        >
+          <PerspectiveCamera makeDefault position={[0, 3, 3]} fov={60} />
+          <OrbitControls
+            enablePan={false}
+            enableZoom={true}
             enableRotate={true}
             maxPolarAngle={Math.PI / 2.2}
             minPolarAngle={Math.PI / 8}
-            maxAzimuthAngle={Math.PI / 3}
-            minAzimuthAngle={-Math.PI / 3}
+            maxAzimuthAngle={Math.PI / 4}
+            minAzimuthAngle={-Math.PI / 4}
             target={[0, 1.0, -3.5]}
-            maxDistance={3.0}
-            minDistance={2.0}
-            rotateSpeed={0.4}
-            dampingFactor={0.08}
+            maxDistance={5}
+            minDistance={2}
+            rotateSpeed={0.5}
+            dampingFactor={0.05}
             enableDamping={true}
           />
-          <fog attach="fog" args={['#1a1a1a', 15, 35]} />
+          <fog attach="fog" args={['#e8f4ff', 20, 50]} />
           <TableScene 
             players={players}
             currentSpeaker={currentSpeaker}
@@ -56,8 +67,11 @@ const GameScene = ({ playerName, onComplete }) => {
         onHumanResponse={handleHumanResponse}
         isProcessing={isProcessing}
         players={players}
-        votes={votes}
         onHumanVote={handleHumanVote}
+        onContinueToVoting={startVotingPhase}
+        onPlayAnotherRound={startAnotherRound}
+        currentRound={currentRound}
+        maxRounds={maxRounds}
       />
     </div>
   );

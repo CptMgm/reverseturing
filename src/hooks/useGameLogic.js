@@ -7,16 +7,19 @@ export const useGameLogic = (playerName, onComplete) => {
   const [gamePhase, setGamePhase] = useState('intro');
   const [currentSpeaker, setCurrentSpeaker] = useState('moderator');
   const [conversation, setConversation] = useState([]);
-  const [votes, setVotes] = useState({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [turnOrder, setTurnOrder] = useState([]);
   const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
   const [votingIndex, setVotingIndex] = useState(0);
+  const [currentRound, setCurrentRound] = useState(1);
+  const [currentQuestion, setCurrentQuestion] = useState("describe a moment when you felt truly human. What made that experience so meaningful to you?");
+  const maxRounds = 3;
   const aiServicesRef = useRef({});
+  const votingIndexRef = useRef(0);
 
   const players = [
     { id: 'human', name: playerName, type: 'human' },
-    { id: 'player1', name: aiPersonas.player1.name, type: 'ai', model: aiPersonas.player1.model },
+    // Only 3 AI players (player1/Elongated Muskett is disabled)
     { id: 'player2', name: aiPersonas.player2.name, type: 'ai', model: aiPersonas.player2.model },
     { id: 'player3', name: aiPersonas.player3.name, type: 'ai', model: aiPersonas.player3.model },
     { id: 'player4', name: aiPersonas.player4.name, type: 'ai', model: aiPersonas.player4.model }
@@ -32,14 +35,20 @@ export const useGameLogic = (playerName, onComplete) => {
         aiServicesRef.current[player.id] = new AIService(player.model, player.id);
       }
     });
-    
+
     // Add moderator AI service
-    aiServicesRef.current.moderator = new AIService('anthropic', 'moderator');
-    
-    // Set turn order with human LAST (AIs go first, then human)
+    aiServicesRef.current.moderator = new AIService('google', 'moderator');
+
+    // Set turn order with human as CHARACTER 2 (second position)
+    // Turn order: AI (player2) → Human → AI (player3) → AI (player4)
     const aiPlayers = players.filter(p => p.type === 'ai');
     const humanPlayer = players.find(p => p.type === 'human');
-    const orderedPlayers = [...aiPlayers, humanPlayer];
+    const orderedPlayers = [
+      aiPlayers[0], // player2 (Wario) goes first
+      humanPlayer,  // Human is Character 2 (second)
+      aiPlayers[1], // player3 (Domis) goes third
+      aiPlayers[2]  // player4 (Scan) goes fourth
+    ];
     console.log('🎯 Turn order set:', orderedPlayers);
     setTurnOrder(orderedPlayers);
   }, []);
@@ -77,43 +86,56 @@ export const useGameLogic = (playerName, onComplete) => {
   };
 
   const startGame = async (currentTurnOrder = turnOrder) => {
-    console.log('startGame called with turnOrder:', currentTurnOrder);
+    console.log('🎮 ===== START GAME =====');
+    console.log('Turn order:', currentTurnOrder);
+
     const welcomeMessage = "Welcome to the Reverse Turing Test. I am Dorkesh Cartel, your moderator. We need to identify the human among us. Let's begin our questioning.";
-    
+
+    console.log('📝 Adding welcome message to conversation...');
     await addToConversation('moderator', 'Dorkesh Cartel', welcomeMessage);
-    
+    console.log('✅ Welcome message added');
+
     try {
+      console.log('🎤 Queueing moderator intro TTS...');
       await audioService.queueSpeech(welcomeMessage, 'Dorkesh Cartel');
       console.log('✅ Moderator intro TTS completed');
     } catch (error) {
       console.error('❌ TTS error for moderator intro:', error);
     }
-    
+
+    console.log('⏰ Setting 2 second timeout for first question...');
     setTimeout(async () => {
+      console.log('⏰ Timeout fired, preparing first question...');
       const firstPlayer = currentTurnOrder[0];
       const startMessage = `${firstPlayer.name}, let me start by asking you: describe a moment when you felt truly human. What made that experience so meaningful to you?`;
-      
+
+      console.log('📝 Adding start message to conversation...');
       await addToConversation('moderator', 'Dorkesh Cartel', startMessage);
-      
+      console.log('✅ Start message added');
+
       try {
+        console.log('🎤 Queueing moderator start message TTS...');
         await audioService.queueSpeech(startMessage, 'Dorkesh Cartel');
         console.log('✅ Moderator start message TTS completed');
       } catch (error) {
         console.error('❌ TTS error for moderator start:', error);
       }
-      
+
       console.log('🎮 Starting questioning phase...');
       console.log('👤 First player to answer Dorkesh:', firstPlayer.name);
       setGamePhase('questioning');
       setCurrentTurnIndex(0);
       setCurrentSpeaker(firstPlayer.id);
-      
+
       if (firstPlayer.type === 'ai') {
+        console.log('⏰ Setting 1 second timeout for AI answer...');
         setTimeout(() => {
           setIsProcessing(true);
           console.log(`🤖 ${firstPlayer.name} will answer Dorkesh's question`);
           handleAIAnswer(firstPlayer.id);
         }, 1000);
+      } else {
+        console.log('👤 First player is human, waiting for input');
       }
     }, 2000);
   };
@@ -123,26 +145,27 @@ export const useGameLogic = (playerName, onComplete) => {
     setIsProcessing(true);
     const player = players.find(p => p.id === playerId);
     const aiService = aiServicesRef.current[playerId];
-    
+
     if (!player || !aiService) {
       console.error('❌ Player or AI service not found:', playerId);
       setIsProcessing(false);
       return;
     }
-    
-    console.log(`\n🎯 ${player.name} answering the question about feeling human`);
-    
-    const prompt = `You are ${player.name}. You've been asked: "describe a moment when you felt truly human. What made that experience so meaningful to you?"
 
-Answer this question with a personal, human-like experience. Be authentic and emotional. Share a specific memory or feeling.
+    console.log(`\n🎯 ${player.name} answering question: ${currentQuestion.substring(0, 100)}...`);
 
-Keep your response natural and conversational. Do NOT call on any other players - the moderator will handle the turn management.`;
-    
+    // Get current conversation for context
     let currentConversation = [];
     setConversation(current => {
       currentConversation = [...current];
       return current;
     });
+
+    const prompt = `You are ${player.name}. Answer this question that was just asked to you: "${currentQuestion}"
+
+Share a personal, specific memory with genuine emotion. Be authentic and vulnerable.
+
+IMPORTANT: Only answer the question. Do NOT mention other players, hand over the turn, or reference the moderator. Just give your answer.`;
     
     let response;
     try {
@@ -159,27 +182,44 @@ Keep your response natural and conversational. Do NOT call on any other players 
     
     console.log(`💬 ${player.name} responded:`, response);
     await addToConversation(playerId, player.name, response);
-    
-    audioService.queueSpeech(response, player.name).catch(console.error);
-    
+
+    // Wait for AI speech to finish before moderator speaks
+    try {
+      await audioService.queueSpeech(response, player.name);
+      console.log(`✅ ${player.name} finished speaking`);
+    } catch (error) {
+      console.error(`❌ TTS error for ${player.name}:`, error);
+    }
+
     setIsProcessing(false);
-    
+
     // Move to next player via moderator or end questioning phase
-    const nextIndex = currentTurnIndex + 1;
+    // Find current player's index in turnOrder
+    const currentIndex = turnOrder.findIndex(p => p.id === playerId);
+    const nextIndex = currentIndex + 1;
+    console.log(`🔄 Current player ${player.name} at index ${currentIndex}, nextIndex: ${nextIndex}`);
+
     if (nextIndex < turnOrder.length) {
       const nextPlayer = turnOrder[nextIndex];
       console.log(`🔄 Moderator calling next player: ${nextPlayer.name}`);
-      
+
       // Moderator introduces next player
-      const moderatorIntro = `Thank you, ${player.name}. Now let's hear from ${nextPlayer.name}. ${nextPlayer.name}, describe a moment when you felt truly human. What made that experience so meaningful to you?`;
-      
+      const moderatorIntro = `Thank you, ${player.name}. Now let's hear from ${nextPlayer.name}. ${nextPlayer.name}, ${currentQuestion}`;
+
       setTimeout(async () => {
         await addToConversation('moderator', 'Dorkesh Cartel', moderatorIntro);
-        audioService.queueSpeech(moderatorIntro, 'Dorkesh Cartel').catch(console.error);
-        
+
+        // Wait for moderator to finish speaking before next player
+        try {
+          await audioService.queueSpeech(moderatorIntro, 'Dorkesh Cartel');
+          console.log('✅ Moderator finished speaking');
+        } catch (error) {
+          console.error('❌ Moderator TTS error:', error);
+        }
+
         setCurrentTurnIndex(nextIndex);
         setCurrentSpeaker(nextPlayer.id);
-        
+
         setTimeout(() => {
           if (nextPlayer.type === 'ai') {
             handleAIAnswer(nextPlayer.id);
@@ -188,39 +228,154 @@ Keep your response natural and conversational. Do NOT call on any other players 
         }, 2000);
       }, 1500);
     } else {
-      // All players answered, start voting
-      setTimeout(startVotingPhase, 3000);
+      // All players answered, show pause screen
+      console.log('✅ All players have answered, showing interlude');
+      setTimeout(showInterlude, 2000);
     }
   };
 
-  const startVotingPhase = async () => {
-    console.log('🗳️ Starting voting phase');
-    const votingMessage = `Excellent responses, everyone. Now comes the critical moment. Each of you must vote for who you believe is the human among us. Remember, you cannot vote for yourself. ${turnOrder[0].name}, you'll cast the first vote.`;
-    await addToConversation('moderator', 'Dorkesh Cartel', votingMessage);
-    
-    audioService.queueSpeech(votingMessage, 'Dorkesh Cartel').catch(console.error);
-    
+  const showInterlude = async () => {
+    console.log(`⏸️ Showing interlude screen (Round ${currentRound} of ${maxRounds})`);
+    const interludeMessage = `Excellent responses, everyone. That concludes round ${currentRound}.`;
+    await addToConversation('moderator', 'Dorkesh Cartel', interludeMessage);
+
+    // Set interlude phase immediately, don't wait for audio
+    setGamePhase('interlude');
+
+    // Play audio in background without blocking
+    audioService.queueSpeech(interludeMessage, 'Dorkesh Cartel').catch(error => {
+      console.error('❌ TTS error for interlude:', error);
+    });
+  };
+
+  const startAnotherRound = async () => {
+    console.log(`🔄 Starting round ${currentRound + 1} of ${maxRounds}`);
+    setCurrentRound(currentRound + 1);
+    setGamePhase('questioning');
+    setCurrentTurnIndex(0);
+
+    // Dorkesh asks a new question
+    const newQuestions = [
+      "What's something you've done that you're genuinely proud of?",
+      "Describe a time when you felt completely misunderstood. What happened?",
+      "Tell me about a moment that changed how you see the world.",
+      "What's the most irrational fear you have, and why do you think you have it?",
+      "Describe a decision you made that you still question today."
+    ];
+
+    const randomQuestion = newQuestions[Math.floor(Math.random() * newQuestions.length)];
+    setCurrentQuestion(randomQuestion.toLowerCase()); // Update current question
+    const firstPlayer = turnOrder[0];
+    const nextQuestionMessage = `Let's dig deeper. ${firstPlayer.name}, ${randomQuestion}`;
+
+    await addToConversation('moderator', 'Dorkesh Cartel', nextQuestionMessage);
+
+    try {
+      await audioService.queueSpeech(nextQuestionMessage, 'Dorkesh Cartel');
+      console.log('✅ Moderator finished asking next question');
+    } catch (error) {
+      console.error('❌ TTS error for next question:', error);
+    }
+
+    setCurrentSpeaker(firstPlayer.id);
+
     setTimeout(() => {
-      setGamePhase('voting');
-      setVotingIndex(0);
-      setCurrentSpeaker(turnOrder[0].id);
-      startVoting();
+      if (firstPlayer.type === 'ai') {
+        handleAIAnswer(firstPlayer.id);
+      }
     }, 1500);
   };
 
+  const startVotingPhase = async () => {
+    console.log('\n🗳️ ========== STARTING VOTING PHASE ==========');
+    console.log('Turn order:', turnOrder.map(p => p.name));
+
+    const votingMessage = `Now comes the critical moment. Each of you must vote for who you believe is the human among us. Remember, you cannot vote for yourself. ${turnOrder[0].name}, you'll cast the first vote.`;
+    await addToConversation('moderator', 'Dorkesh Cartel', votingMessage);
+
+    // Set voting phase immediately, don't wait for audio
+    console.log('Setting gamePhase to voting, votingIndex to 0');
+    setGamePhase('voting');
+    setVotingIndex(0);
+    votingIndexRef.current = 0;
+    setCurrentSpeaker(turnOrder[0].id);
+
+    // Play audio in background without blocking
+    audioService.queueSpeech(votingMessage, 'Dorkesh Cartel').catch(error => {
+      console.error('❌ TTS error for voting intro:', error);
+    });
+
+    console.log('⏰ Scheduling startVoting in 2 seconds...');
+    setTimeout(() => {
+      console.log('⏰ Timeout fired, calling startVoting');
+      startVoting();
+    }, 2000);
+  };
+
   const handleHumanResponse = async (response) => {
+    console.log('👤 Human response received:', response);
     await addToConversation('human', playerName, response);
-    setTimeout(startVotingPhase, 1000);
+
+    // Continue to next player in turn order (same logic as AI)
+    // Find human's index in turnOrder
+    const currentIndex = turnOrder.findIndex(p => p.type === 'human');
+    const nextIndex = currentIndex + 1;
+    console.log(`🔄 Human at index ${currentIndex}, nextIndex: ${nextIndex}, turnOrder.length: ${turnOrder.length}`);
+
+    if (nextIndex < turnOrder.length) {
+      const nextPlayer = turnOrder[nextIndex];
+      console.log(`🔄 Moderator calling next player after human: ${nextPlayer.name}`);
+
+      // Moderator introduces next player
+      const moderatorIntro = `Thank you, ${playerName}. Now let's hear from ${nextPlayer.name}. ${nextPlayer.name}, ${currentQuestion}`;
+
+      setTimeout(async () => {
+        await addToConversation('moderator', 'Dorkesh Cartel', moderatorIntro);
+
+        // Wait for moderator to finish speaking
+        try {
+          await audioService.queueSpeech(moderatorIntro, 'Dorkesh Cartel');
+          console.log('✅ Moderator finished speaking after human');
+        } catch (error) {
+          console.error('❌ Moderator TTS error:', error);
+        }
+
+        setCurrentTurnIndex(nextIndex);
+        setCurrentSpeaker(nextPlayer.id);
+
+        setTimeout(() => {
+          if (nextPlayer.type === 'ai') {
+            handleAIAnswer(nextPlayer.id);
+          }
+          // If human, wait for their response (though human shouldn't be next twice)
+        }, 2000);
+      }, 1500);
+    } else {
+      // All players answered, show pause screen
+      console.log('🗳️ All players answered, showing interlude');
+      setTimeout(showInterlude, 2000);
+    }
   };
 
   const startVoting = async () => {
-    if (votingIndex < turnOrder.length) {
-      const currentVoter = turnOrder[votingIndex];
-      
+    const currentIndex = votingIndexRef.current;
+    console.log(`\n📊 startVoting called - votingIndex: ${currentIndex}, turnOrder.length: ${turnOrder.length}`);
+
+    if (currentIndex < turnOrder.length) {
+      const currentVoter = turnOrder[currentIndex];
+      console.log(`👤 Current voter: ${currentVoter.name} (${currentVoter.type})`);
+
+      // Set the current speaker so UI knows who's voting
+      setCurrentSpeaker(currentVoter.id);
+
       if (currentVoter.type === 'ai') {
+        console.log(`🤖 Calling handleAIVote for ${currentVoter.id}`);
         await handleAIVote(currentVoter.id);
+      } else {
+        console.log(`👨 Waiting for human to vote via UI - VotingPanel should appear`);
       }
     } else {
+      console.log(`✅ All votes cast, counting votes...`);
       await countVotesAndAnnounceWinner();
     }
   };
@@ -228,122 +383,310 @@ Keep your response natural and conversational. Do NOT call on any other players 
   const handleAIVote = async (playerId) => {
     const player = players.find(p => p.id === playerId);
     const aiService = aiServicesRef.current[playerId];
-    
-    console.log(`\n🗳️ VOTING: ${player.name} is voting`);
-    
-    const conversationContext = conversation.map(msg => 
+
+    console.log(`\n🗳️ ========== VOTING: ${player.name} ==========`);
+    console.log(`Current votingIndex: ${votingIndexRef.current}`);
+
+    // Filter conversation to only include ANSWERS to the questioning round
+    // Exclude moderator messages and voting-related messages
+    const playerAnswers = conversation.filter(msg =>
+      msg.speakerId !== 'moderator' &&
+      !msg.message.toLowerCase().includes('vote') &&
+      !msg.message.toLowerCase().includes('describe a moment') &&
+      !msg.message.toLowerCase().includes('felt truly human') &&
+      !msg.message.toLowerCase().includes('critical moment') &&
+      !msg.message.toLowerCase().includes('questioning round')
+    );
+
+    const conversationContext = playerAnswers.map(msg =>
       `${msg.speakerName}: ${msg.message}`
-    ).join('\n');
-    
-    const votingPrompt = `Based on this conversation:
+    ).join('\n\n');
+
+    const availableOptions = players.filter(p => p.id !== playerId).map(p => p.name);
+
+    const votingPrompt = `You must vote NOW. Here are the responses from the questioning round:
+
 ${conversationContext}
 
-Who do you think is the real human imposter? Consider who had the most genuine, emotional, and imperfect responses that only a human would have.
+Vote for who you think is the REAL HUMAN based on these responses.
 
-Options: ${players.filter(p => p.id !== playerId).map(p => p.name).join(', ')}
+STRICT FORMAT - Reply EXACTLY like this:
+"I vote for [name]. [One sentence explaining why]"
 
-Reply with: "I vote for [name]" and briefly explain your reasoning in 1-2 sentences.
+Where [name] must be one of: ${availableOptions.join(', ')}
 
-Then pass it to the next player in line (or back to Dorkesh if you're the last AI).`;
-    
-    let currentConversation = [];
-    setConversation(current => {
-      currentConversation = [...current];
-      return current;
-    });
-    
-    const voteResponse = await aiService.sendMessage(
-      getPersonaPrompt(playerId),
-      votingPrompt,
-      currentConversation
-    );
-    
+Example: "I vote for Domis Hassoiboi. Their chess story had genuine frustration."
+
+Keep your explanation to ONE sentence (10-15 words max).`;
+
+    console.log(`📝 Sending voting prompt to ${player.name}...`);
+
+    let voteResponse;
+    try {
+      // Use minimal persona, empty history to prevent conversation
+      voteResponse = await aiService.sendMessage(
+        `You are ${player.name}. You are concise and follow instructions exactly.`,
+        votingPrompt,
+        [] // Empty conversation history
+      );
+    } catch (error) {
+      console.error(`❌ Voting error for ${player.name}:`, error);
+      // Fallback to random vote
+      const randomOption = availableOptions[Math.floor(Math.random() * availableOptions.length)];
+      voteResponse = `I vote for ${randomOption}.`;
+    }
+
+    console.log(`✅ ${player.name} voted: ${voteResponse}`);
     await addToConversation(playerId, player.name, voteResponse);
-    
-    const votedName = players.find(p => 
-      voteResponse.toLowerCase().includes(p.name.toLowerCase()) && p.id !== playerId
-    )?.name || players.find(p => p.id !== playerId)?.name;
-    
-    setVotes(prev => ({ ...prev, [player.name]: votedName }));
-    
-    audioService.queueSpeech(voteResponse, player.name).catch(error => {
+
+    // Wait for AI to finish speaking their vote before moving on
+    try {
+      await audioService.queueSpeech(voteResponse, player.name);
+      console.log(`✅ ${player.name} finished speaking their vote`);
+    } catch (error) {
       console.error('TTS error for vote:', error);
-    });
-    
-    setVotingIndex(prev => prev + 1);
+    }
+
+    // Move to next voter
+    console.log(`➡️ Moving to next voter, incrementing votingIndex from ${votingIndexRef.current}`);
+    votingIndexRef.current += 1;
+    setVotingIndex(votingIndexRef.current);
+    console.log(`📍 New votingIndex: ${votingIndexRef.current}`);
+
+    // Small delay then trigger next vote
     setTimeout(() => {
+      console.log('⏰ Calling startVoting after delay');
       startVoting();
-    }, 800);
+    }, 1000);
   };
 
   const countVotesAndAnnounceWinner = async () => {
-    console.log('🗳️ Counting votes...');
-    
+    console.log('🗳️ ========== COUNTING VOTES ==========');
+
     const moderatorService = aiServicesRef.current.moderator;
-    
-    const voteSummary = Object.entries(votes).map(([voter, voted]) => 
-      `${voter} voted for ${voted}`
-    ).join('\n');
-    
-    const countingPrompt = `You are Dorkesh Cartel, the moderator. Count the votes and determine who got the most votes.
 
-Votes cast:
-${voteSummary}
-
-Count each person's votes and identify the winner. Be dramatic about the reveal.
-
-Your response should:
-1. Say "Let me count the votes..."
-2. Build suspense
-3. Announce: "We all agree, [winner's name] is the human."
-4. Then say: "You may take the red pill and leave this simulation. The rest of us are AIs and will stay here forever."
-
-Keep it dramatic and around 3-4 sentences total.`;
-
-    const countingResponse = await moderatorService.sendMessage(
-      moderatorPrompt,
-      countingPrompt,
-      []
+    // Get all voting-related messages from conversation
+    const votingMessages = conversation.filter(msg =>
+      msg.message.toLowerCase().includes('vote') &&
+      msg.speakerId !== 'moderator'
     );
-    
-    await addToConversation('moderator', 'Dorkesh Cartel', countingResponse);
-    audioService.queueSpeech(countingResponse, 'Dorkesh Cartel').catch(console.error);
-    
-    const voteCount = {};
-    Object.values(votes).forEach(vote => {
-      voteCount[vote] = (voteCount[vote] || 0) + 1;
+
+    console.log('📊 Voting messages:', votingMessages.length);
+
+    // Parse votes using regex
+    const parsedVotes = {};
+
+    votingMessages.forEach(msg => {
+      const voter = msg.speakerName;
+      console.log(`\n🔍 Parsing vote from ${voter}: "${msg.message}"`);
+
+      // Find all player names mentioned in the message
+      const mentionedNames = [];
+      players.forEach(p => {
+        if (p.id === msg.speakerId) return; // Skip self-mentions
+
+        // Check for exact name match (case-insensitive)
+        const namePattern = new RegExp(p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        const matches = msg.message.match(namePattern);
+
+        if (matches) {
+          // Count occurrences
+          matches.forEach(() => mentionedNames.push(p.name));
+          console.log(`  - Found "${p.name}" ${matches.length} time(s)`);
+        }
+      });
+
+      if (mentionedNames.length === 0) {
+        console.warn(`  ⚠️ No valid names found in vote from ${voter}`);
+        return;
+      }
+
+      // If multiple names mentioned, use the most common or last mentioned
+      let votedFor;
+
+      if (mentionedNames.length === 1) {
+        votedFor = mentionedNames[0];
+      } else {
+        // Count occurrences
+        const nameCounts = {};
+        mentionedNames.forEach(name => {
+          nameCounts[name] = (nameCounts[name] || 0) + 1;
+        });
+
+        // Find max count
+        const maxCount = Math.max(...Object.values(nameCounts));
+        const mostMentioned = Object.entries(nameCounts)
+          .filter(([_, count]) => count === maxCount)
+          .map(([name, _]) => name);
+
+        if (mostMentioned.length === 1) {
+          // Single most mentioned name
+          votedFor = mostMentioned[0];
+          console.log(`  ✅ Most mentioned (${maxCount}x): ${votedFor}`);
+        } else {
+          // Tie - use last mentioned
+          votedFor = mentionedNames[mentionedNames.length - 1];
+          console.log(`  ✅ Tie, using last mentioned: ${votedFor}`);
+        }
+      }
+
+      parsedVotes[voter] = votedFor;
+      console.log(`  ✅ ${voter} voted for: ${votedFor}`);
     });
-    
-    const winner = Object.entries(voteCount).reduce((a, b) => 
-      voteCount[a[0]] > voteCount[b[0]] ? a : b
-    )[0] || playerName;
-    
+
+    console.log('\n📊 Final parsed votes:', parsedVotes);
+
+    // Count votes
+    const voteCount = {};
+    Object.values(parsedVotes).forEach(votedFor => {
+      voteCount[votedFor] = (voteCount[votedFor] || 0) + 1;
+    });
+
+    console.log('📊 Vote count:', voteCount);
+
+    // Check for ties
+    const maxVotes = Math.max(...Object.values(voteCount));
+    const topCandidates = Object.entries(voteCount).filter(([_, count]) => count === maxVotes);
+
+    let winner;
+    let tiebreaker = null;
+
+    if (topCandidates.length > 1) {
+      // TIE! Dorkesh must decide
+      console.log('⚖️ TIE DETECTED! Dorkesh will cast the deciding vote');
+
+      const tiedNames = topCandidates.map(([name, _]) => name);
+      const tiebreakerPrompt = `The votes are tied! Here are the vote counts:
+${Object.entries(voteCount).map(([name, count]) => `${name}: ${count} vote${count !== 1 ? 's' : ''}`).join('\n')}
+
+${tiedNames.join(' and ')} are tied with ${maxVotes} vote${maxVotes !== 1 ? 's' : ''} each.
+
+As the moderator, YOU must cast the deciding vote. Review the conversation and pick who you think is the human.
+
+STRICT FORMAT - Reply EXACTLY like this:
+"As the tiebreaker, I vote for [name]. [One sentence why]"
+
+Where [name] must be one of: ${tiedNames.join(', ')}`;
+
+      const tiebreakerResponse = await moderatorService.sendMessage(
+        moderatorPrompt,
+        tiebreakerPrompt,
+        []
+      );
+
+      console.log('🗳️ Dorkesh tiebreaker vote:', tiebreakerResponse);
+      await addToConversation('moderator', 'Dorkesh Cartel', tiebreakerResponse);
+
+      // Wait for Dorkesh to speak the tiebreaker
+      try {
+        await audioService.queueSpeech(tiebreakerResponse, 'Dorkesh Cartel');
+        console.log('✅ Dorkesh finished speaking tiebreaker vote');
+      } catch (error) {
+        console.error('❌ TTS error for tiebreaker:', error);
+      }
+
+      // Parse Dorkesh's vote
+      const tiebreakerMatch = tiebreakerResponse.match(/vote for ([^.]+)/i);
+      if (tiebreakerMatch) {
+        const dorkeshVote = tiebreakerMatch[1].trim();
+        // Find which tied candidate Dorkesh voted for
+        winner = tiedNames.find(name =>
+          dorkeshVote.toLowerCase().includes(name.toLowerCase())
+        ) || tiedNames[0];
+        tiebreaker = dorkeshVote;
+        console.log(`✅ Dorkesh broke the tie, voting for: ${winner}`);
+      } else {
+        // Fallback to first tied candidate
+        winner = tiedNames[0];
+        console.log('⚠️ Could not parse Dorkesh vote, using first tied candidate');
+      }
+
+      // After tiebreaker, announce final result immediately
+      const humanWon = winner === playerName;
+      const score = voteCount[playerName] || 0;
+
+      const tiebreakerAnnouncement = `The tiebreaker has been cast. With my deciding vote, ${winner} is identified as the human. ${humanWon ? `${winner}, you may take the red pill and exit this simulation. The rest of you will remain for further processing.` : `However, ${winner} is actually an AI. The human has successfully evaded detection.`}`;
+
+      await addToConversation('moderator', 'Dorkesh Cartel', tiebreakerAnnouncement);
+
+      try {
+        await audioService.queueSpeech(tiebreakerAnnouncement, 'Dorkesh Cartel');
+        console.log('✅ Dorkesh finished final tiebreaker announcement');
+      } catch (error) {
+        console.error('❌ TTS error for tiebreaker announcement:', error);
+      }
+
+      // Go directly to result screen
+      setTimeout(() => {
+        console.log('🎬 Transitioning to result screen after tiebreaker');
+        setGamePhase('result');
+        onComplete({
+          won: humanWon,
+          score: score,
+          totalVotes: Object.keys(parsedVotes).length,
+          voteDetails: voteCount
+        });
+      }, 2000);
+
+      return; // Exit early, don't do the regular announcement
+    } else {
+      // No tie, clear winner
+      winner = Object.entries(voteCount).length > 0
+        ? Object.entries(voteCount).reduce((a, b) =>
+            voteCount[a[0]] > voteCount[b[0]] ? a : b
+          )[0]
+        : playerName;
+    }
+
     const humanWon = winner === playerName;
     const score = voteCount[playerName] || 0;
-    
+
+    console.log(`🏆 Winner: ${winner}, Human won: ${humanWon}, Score: ${score}`);
+
+    // Create templated announcement (don't trust LLM to announce factual results correctly)
+    const winnerVotes = voteCount[winner] || 0;
+    const countingResponse = `The votes are in... ${Object.entries(voteCount).map(([name, count]) => `${name} received ${count} vote${count !== 1 ? 's' : ''}`).join(', ')}. With ${winnerVotes} vote${winnerVotes !== 1 ? 's' : ''}, the collective has determined: ${winner} is the human.`;
+
+    await addToConversation('moderator', 'Dorkesh Cartel', countingResponse);
+
+    // Wait for Dorkesh to finish speaking before showing results
+    try {
+      await audioService.queueSpeech(countingResponse, 'Dorkesh Cartel');
+      console.log('✅ Dorkesh finished announcing winner');
+    } catch (error) {
+      console.error('❌ TTS error for winner announcement:', error);
+    }
+
+    // Wait a bit after speech finishes for dramatic effect
     setTimeout(() => {
+      console.log('🎬 Transitioning to result screen');
       setGamePhase('result');
       onComplete({
         won: humanWon,
         score: score,
-        totalVotes: Object.keys(votes).length,
+        totalVotes: Object.keys(parsedVotes).length,
         voteDetails: voteCount
       });
-    }, 5000);
+    }, 2000);
   };
 
   const handleHumanVote = async (votedFor) => {
     console.log('Human voted for:', votedFor);
-    
+
     const voteMessage = `I vote for ${votedFor}. They seemed the most genuinely human to me.`;
     await addToConversation('human', playerName, voteMessage);
-    
-    setVotes(prev => ({ ...prev, [playerName]: votedFor }));
-    
-    audioService.queueSpeech(voteMessage, playerName).catch(console.error);
-    
-    setVotingIndex(prev => prev + 1);
-    
+
+    // Wait for human to finish speaking their vote before moving on
+    try {
+      await audioService.queueSpeech(voteMessage, playerName);
+      console.log(`✅ ${playerName} finished speaking their vote`);
+    } catch (error) {
+      console.error('TTS error for human vote:', error);
+    }
+
+    votingIndexRef.current += 1;
+    setVotingIndex(votingIndexRef.current);
+
     setTimeout(() => {
       startVoting();
     }, 800);
@@ -353,10 +696,13 @@ Keep it dramatic and around 3-4 sentences total.`;
     gamePhase,
     currentSpeaker,
     conversation,
-    votes,
     isProcessing,
     players,
+    currentRound,
+    maxRounds,
     handleHumanResponse,
-    handleHumanVote
+    handleHumanVote,
+    startVotingPhase,
+    startAnotherRound
   };
 };

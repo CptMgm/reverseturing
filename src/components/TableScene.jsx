@@ -1,138 +1,113 @@
 import React, { useRef, useMemo, Suspense, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Text, Box, Sphere, Cylinder, MeshReflectorMaterial, RoundedBox, Plane, useGLTF } from '@react-three/drei';
+import { Text, Box, Sphere, Cylinder, MeshReflectorMaterial, RoundedBox, Plane } from '@react-three/drei';
 import * as THREE from 'three';
 import readyPlayerMeService from '../services/readyPlayerMeService';
 
-// Ready Player Me Avatar Component  
-const Avatar = ({ playerId, position, rotation, scale = 1, isSpeaking }) => {
+// Minimalist Avatar Component
+const Avatar = ({ playerId, position, rotation, scale = 1, isSpeaking, playerName }) => {
   const avatarRef = useRef();
-  const [avatarUrl, setAvatarUrl] = useState('https://models.readyplayer.me/689d222db09df363fd10ef30.glb'); // Start with default
-  
-  // Get character-specific avatar URL
-  useEffect(() => {
-    const loadAvatarUrl = async () => {
-      try {
-        console.log(`🎭 Loading avatar for ${playerId}...`);
-        const url = await readyPlayerMeService.generateAvatarUrl(playerId);
-        setAvatarUrl(url);
-        console.log(`✅ Avatar URL set for ${playerId}: ${url}`);
-      } catch (error) {
-        console.error(`❌ Failed to load avatar for ${playerId}:`, error);
-        // Keep the default URL
-      }
-    };
-    
-    if (playerId) {
-      loadAvatarUrl();
-    }
-  }, [playerId]);
-  
-  // Always call useGLTF with a URL (React hooks rule)
-  const { scene, error } = useGLTF(avatarUrl);
-  
-  console.log(`🎯 GLTF state for ${playerId}:`, { scene: !!scene, error: !!error, avatarUrl });
-  
-  // Clone the scene to avoid conflicts with multiple instances
-  const clonedScene = useMemo(() => {
-    if (scene) {
-      const cloned = scene.clone();
-      console.log('Ready Player Me avatar loaded successfully');
-      
-      // Ensure the avatar is properly positioned and scaled
-      cloned.traverse((child) => {
-        if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-          
-          // Improve material properties for better lighting
-          if (child.material) {
-            child.material.needsUpdate = true;
-          }
-        }
-      });
-      
-      return cloned;
-    }
-    return null;
-  }, [scene]);
-  
-  // Add speaking animation
+  const floatGroupRef = useRef();
+
+  // Floating animation for speaking
   useFrame((state) => {
-    if (avatarRef.current && isSpeaking) {
-      avatarRef.current.rotation.y = rotation[1] + Math.sin(state.clock.elapsedTime * 2) * 0.05;
-      avatarRef.current.position.y = position[1] + Math.sin(state.clock.elapsedTime * 1.5) * 0.02;
-    } else if (avatarRef.current) {
-      avatarRef.current.rotation.y = rotation[1];
-      avatarRef.current.position.y = position[1];
+    if (floatGroupRef.current && isSpeaking) {
+      floatGroupRef.current.position.y = Math.sin(state.clock.elapsedTime * 2) * 0.05;
+    } else if (floatGroupRef.current) {
+      floatGroupRef.current.position.y *= 0.95; // Smooth return
     }
   });
-  
-  // Error handling
-  if (error) {
-    console.error(`❌ Error loading Ready Player Me avatar for ${playerId}:`, error);
-    return (
-      <group position={position} rotation={rotation}>
-        <Sphere args={[0.4, 32, 32]} position={[0, 0.9, 0]} castShadow>
-          <meshStandardMaterial 
-            color="#ff6b6b" 
-            emissive={isSpeaking ? '#ff4444' : '#000000'}
-            emissiveIntensity={isSpeaking ? 0.3 : 0}
-          />
-        </Sphere>
-        <RoundedBox args={[0.8, 1.2, 0.3]} radius={0.05} position={[0, 0, 0]} castShadow>
-          <meshStandardMaterial color="#333333" />
-        </RoundedBox>
-        <Text
-          position={[0, 1.5, 0]}
-          fontSize={0.1}
-          color="#ff6b6b"
-          anchorX="center"
-          anchorY="middle"
-        >
-          Avatar Load Error
-        </Text>
-      </group>
-    );
-  }
-  
-  if (!clonedScene) {
-    console.log(`⏳ Ready Player Me avatar scene not ready for ${playerId}, showing loading fallback...`);
-    return (
-      <group position={position} rotation={rotation}>
-        <Sphere args={[0.4, 32, 32]} position={[0, 0.9, 0]} castShadow>
-          <meshStandardMaterial 
-            color="#87CEEB" 
-            emissive={isSpeaking ? '#4169E1' : '#000000'}
-            emissiveIntensity={isSpeaking ? 0.3 : 0}
-          />
-        </Sphere>
-        <RoundedBox args={[0.8, 1.2, 0.3]} radius={0.05} position={[0, 0, 0]} castShadow>
-          <meshStandardMaterial color="#333333" />
-        </RoundedBox>
-        <Text
-          position={[0, 1.5, 0]}
-          fontSize={0.1}
-          color="#87CEEB"
-          anchorX="center"
-          anchorY="middle"
-        >
-          GLTF Loading...
-        </Text>
-      </group>
-    );
-  }
-  
+
   return (
-    <primitive
-      ref={avatarRef}
-      object={clonedScene}
-      position={position}
-      rotation={rotation}
-      scale={[scale, scale, scale]}
-      castShadow
-      receiveShadow
-    />
+    <group ref={avatarRef} position={position} rotation={rotation}>
+      <group ref={floatGroupRef}>
+        {/* Minimalist avatar - clean geometric design */}
+        <group position={[0, 0.2, 0]}>
+          {/* Head - glowing sphere */}
+          <Sphere args={[0.35, 32, 32]} position={[0, 0.9, 0]} castShadow>
+            <meshStandardMaterial
+              color={isSpeaking ? '#e0f7ff' : '#f5f5f5'}
+              emissive={isSpeaking ? '#4a9eff' : '#cccccc'}
+              emissiveIntensity={isSpeaking ? 0.6 : 0.1}
+              roughness={0.3}
+              metalness={0.1}
+            />
+          </Sphere>
+
+          {/* Body - clean capsule shape */}
+          <Cylinder args={[0.25, 0.35, 1.0, 32]} position={[0, 0.15, 0]} castShadow>
+            <meshStandardMaterial
+              color="#fafafa"
+              roughness={0.4}
+              metalness={0.05}
+            />
+          </Cylinder>
+
+          {/* Shoulders */}
+          <Sphere args={[0.18, 16, 16]} position={[0.35, 0.55, 0]} castShadow>
+            <meshStandardMaterial color="#f0f0f0" roughness={0.4} />
+          </Sphere>
+          <Sphere args={[0.18, 16, 16]} position={[-0.35, 0.55, 0]} castShadow>
+            <meshStandardMaterial color="#f0f0f0" roughness={0.4} />
+          </Sphere>
+
+          {/* Eyes - minimal design */}
+          <Sphere args={[0.05, 16, 16]} position={[0.12, 1.0, 0.32]} castShadow>
+            <meshStandardMaterial
+              color={isSpeaking ? '#4a9eff' : '#333333'}
+              emissive={isSpeaking ? '#4a9eff' : '#000000'}
+              emissiveIntensity={isSpeaking ? 0.5 : 0}
+            />
+          </Sphere>
+          <Sphere args={[0.05, 16, 16]} position={[-0.12, 1.0, 0.32]} castShadow>
+            <meshStandardMaterial
+              color={isSpeaking ? '#4a9eff' : '#333333'}
+              emissive={isSpeaking ? '#4a9eff' : '#000000'}
+              emissiveIntensity={isSpeaking ? 0.5 : 0}
+            />
+          </Sphere>
+
+          {/* Speaking indicator ring */}
+          {isSpeaking && (
+            <mesh position={[0, 0.9, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.45, 0.5, 32]} />
+              <meshStandardMaterial
+                color="#4a9eff"
+                emissive="#4a9eff"
+                emissiveIntensity={0.8}
+                transparent
+                opacity={0.6}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          )}
+        </group>
+
+        {/* Floating nameplate */}
+        {playerName && (
+          <group position={[0, 2.5, 0]}>
+            <RoundedBox args={[playerName.length * 0.12 + 0.3, 0.25, 0.04]} radius={0.02}>
+              <meshStandardMaterial
+                color="#ffffff"
+                transparent
+                opacity={0.15}
+                roughness={0.1}
+                metalness={0.8}
+              />
+            </RoundedBox>
+            <Text
+              position={[0, 0, 0.03]}
+              fontSize={0.25}
+              color="#4a9eff"
+              anchorX="center"
+              anchorY="middle"
+            >
+              {playerName}
+            </Text>
+          </group>
+        )}
+      </group>
+    </group>
   );
 };
 
@@ -220,174 +195,94 @@ const TableScene = ({ players, currentSpeaker }) => {
   
   return (
     <group>
-      {/* Cinematic Lighting System */}
-      <ambientLight intensity={0.3} color="#f8f6f0" />
-      
-      {/* Main overhead lighting with soft shadows */}
-      <directionalLight 
-        position={[0, 30, 8]} 
-        intensity={2.2} 
+      {/* Minimalist Sci-Fi Lighting */}
+      <ambientLight intensity={0.4} color="#e8f4ff" />
+
+      {/* Main soft lighting from above */}
+      <directionalLight
+        position={[0, 20, 5]}
+        intensity={1.8}
         color="#ffffff"
         castShadow
         shadow-mapSize-width={4096}
         shadow-mapSize-height={4096}
-        shadow-camera-far={100}
-        shadow-camera-left={-25}
-        shadow-camera-right={25}
-        shadow-camera-top={25}
-        shadow-camera-bottom={-25}
+        shadow-camera-far={50}
+        shadow-camera-left={-20}
+        shadow-camera-right={20}
+        shadow-camera-top={20}
+        shadow-camera-bottom={-20}
         shadow-bias={-0.0001}
       />
-      
-      {/* Warm executive lighting */}
-      <pointLight position={[-10, 15, -2]} intensity={0.8} color="#ffb366" distance={25} decay={1.5} />
-      <pointLight position={[10, 15, -2]} intensity={0.8} color="#ffb366" distance={25} decay={1.5} />
-      <pointLight position={[0, 12, -8]} intensity={1.0} color="#ffffff" distance={20} decay={1.8} />
-      
-      {/* Table accent lighting */}
-      <spotLight 
-        position={[0, 8, -3.5]} 
+
+      {/* Clean accent lighting */}
+      <pointLight position={[-8, 10, -3]} intensity={1.2} color="#b8e0ff" distance={20} decay={2} />
+      <pointLight position={[8, 10, -3]} intensity={1.2} color="#b8e0ff" distance={20} decay={2} />
+
+      {/* Table spotlight */}
+      <spotLight
+        position={[0, 12, -3.5]}
         target-position={[0, 0.75, -3.5]}
-        angle={0.8}
-        penumbra={0.5}
-        intensity={0.6}
-        color="#fff8e7"
-        distance={12}
+        angle={0.6}
+        penumbra={0.4}
+        intensity={2.0}
+        color="#ffffff"
+        distance={15}
+        castShadow
       />
 
-      {/* Elegant Room Architecture */}
+      {/* Environment - Clean minimalist room */}
       <group>
-        {/* Sophisticated room with gradient walls */}
+        {/* Room cube - white minimalist */}
         <mesh>
-          <boxGeometry args={[50, 25, 50]} />
-          <meshStandardMaterial 
-            color="#1a2332"
+          <boxGeometry args={[40, 20, 40]} />
+          <meshStandardMaterial
+            color="#fafafa"
             side={THREE.BackSide}
-            roughness={0.8}
-            metalness={0.05}
+            roughness={0.9}
+            metalness={0.0}
           />
         </mesh>
-        
-        {/* Upper wall accent */}
-        <Box args={[48, 8, 0.2]} position={[0, 16, -24.9]}>
-          <meshStandardMaterial 
-            color="#2a3a52" 
-            roughness={0.6}
-            metalness={0.2}
-          />
-        </Box>
-        
-        {/* Elegant wainscoting */}
-        <Box args={[48, 4, 0.3]} position={[0, 2, -24.85]}>
-          <meshStandardMaterial 
-            color="#8b7355" 
-            roughness={0.3}
-            metalness={0.2}
-          />
-        </Box>
-        <Box args={[0.3, 4, 48]} position={[-24.85, 2, 0]}>
-          <meshStandardMaterial 
-            color="#8b7355" 
-            roughness={0.3}
-            metalness={0.2}
-          />
-        </Box>
-        <Box args={[0.3, 4, 48]} position={[24.85, 2, 0]}>
-          <meshStandardMaterial 
-            color="#8b7355" 
-            roughness={0.3}
-            metalness={0.2}
-          />
-        </Box>
-        
-        {/* Executive windows with city view simulation */}
-        <group position={[0, 8, -24.6]}>
-          <Box args={[12, 8, 0.2]}>
-            <meshPhysicalMaterial 
-              color="#87ceeb"
-              transmission={0.9}
-              thickness={0.1}
-              roughness={0.05}
-              metalness={0}
-              clearcoat={1}
-              clearcoatRoughness={0}
-            />
-          </Box>
-          {/* Window frame */}
-          <Box args={[12.4, 8.4, 0.15]} position={[0, 0, -0.1]}>
-            <meshStandardMaterial color="#2a2a2a" metalness={0.7} roughness={0.2} />
-          </Box>
-        </group>
-        
-        {/* Side windows */}
-        <group position={[-24.6, 8, -8]}>
-          <Box args={[0.2, 8, 8]}>
-            <meshPhysicalMaterial 
-              color="#87ceeb"
-              transmission={0.9}
-              thickness={0.1}
-              roughness={0.05}
-            />
-          </Box>
-        </group>
-        <group position={[24.6, 8, -8]}>
-          <Box args={[0.2, 8, 8]}>
-            <meshPhysicalMaterial 
-              color="#87ceeb"
-              transmission={0.9}
-              thickness={0.1}
-              roughness={0.05}
-            />
-          </Box>
-        </group>
 
-        {/* Crown molding */}
-        <Box args={[48, 0.5, 0.5]} position={[0, 12, -24.75]}>
-          <meshStandardMaterial color="#f5f5f0" metalness={0.3} roughness={0.4} />
-        </Box>
-        
-        {/* Recessed ceiling */}
-        <Box args={[46, 0.8, 46]} position={[0, 12.1, 0]}>
-          <meshStandardMaterial color="#e8e8e8" roughness={0.6} />
-        </Box>
+        {/* Subtle wall panels */}
+        <RoundedBox args={[35, 15, 0.1]} position={[0, 7.5, -19.95]} radius={0.05}>
+          <meshStandardMaterial
+            color="#f0f4f8"
+            roughness={0.8}
+            metalness={0.1}
+          />
+        </RoundedBox>
+
+        {/* Clean accent line */}
+        <Cylinder args={[0.02, 0.02, 35, 16]} position={[0, 10, -19.9]} rotation={[0, 0, Math.PI / 2]}>
+          <meshStandardMaterial
+            color="#4a9eff"
+            emissive="#4a9eff"
+            emissiveIntensity={0.3}
+            roughness={0.2}
+            metalness={0.8}
+          />
+        </Cylinder>
       </group>
-      
-      {/* Premium marble floor with subtle reflections */}
+
+      {/* Premium minimalist floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[50, 50]} />
-        <MeshReflectorMaterial
-          blur={[300, 80]}
-          resolution={2048}
-          mixBlur={0.6}
-          mixStrength={35}
-          roughness={0.15}
-          depthScale={1.0}
-          minDepthThreshold={0.9}
-          maxDepthThreshold={1.1}
-          color="#0a0a0a"
-          metalness={0.7}
+        <planeGeometry args={[40, 40]} />
+        <meshStandardMaterial
+          color="#f8f8f8"
+          roughness={0.1}
+          metalness={0.3}
         />
       </mesh>
-      
-      {/* Marble veining pattern */}
+
+      {/* Subtle floor pattern */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]}>
-        <planeGeometry args={[50, 50]} />
+        <planeGeometry args={[40, 40, 20, 20]} />
         <meshStandardMaterial
-          color="#1a1a1a"
+          color="#e8e8e8"
           transparent
-          opacity={0.2}
-          roughness={0.3}
-          metalness={0.1}
-        />
-      </mesh>
-      
-      {/* Luxurious Persian rug with pattern */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -3.5]} receiveShadow>
-        <planeGeometry args={[13, 9]} />
-        <meshStandardMaterial
-          color="#6b1a2a"
-          roughness={0.9}
-          metalness={0}
+          opacity={0.1}
+          roughness={0.8}
+          wireframe
         />
       </mesh>
       
@@ -413,86 +308,75 @@ const TableScene = ({ players, currentSpeaker }) => {
         />
       </mesh>
       
-      {/* Premium Round Poker Table */}
+      {/* Modern Minimalist Round Table */}
       <group position={[0, 0.75, -3.5]}>
-        {/* Round table surface - perfect for 6-player poker setup */}
+        {/* Main table surface - glass-like with subtle transparency */}
         <mesh position={[0, 0, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[5.0, 5.0, 0.25, 64]} />
-          <meshStandardMaterial 
-            color="#2d1810"
-            metalness={0.2}
-            roughness={0.1}
+          <cylinderGeometry args={[4.5, 4.5, 0.15, 64]} />
+          <meshPhysicalMaterial
+            color="#ffffff"
+            transparent
+            opacity={0.3}
+            roughness={0.05}
+            metalness={0.9}
             clearcoat={1}
-            clearcoatRoughness={0.05}
+            clearcoatRoughness={0.1}
           />
         </mesh>
-        
-        {/* Wood grain detail ring */}
-        <mesh position={[0, 0.02, 0]}>
-          <cylinderGeometry args={[4.7, 4.7, 0.22, 64]} />
-          <meshStandardMaterial 
-            color="#3d2420"
-            metalness={0.15}
-            roughness={0.2}
+
+        {/* Table edge ring - subtle chrome */}
+        <mesh position={[0, -0.075, 0]}>
+          <torusGeometry args={[4.5, 0.08, 16, 100]} />
+          <meshStandardMaterial
+            color="#e0e0e0"
+            metalness={0.95}
+            roughness={0.05}
           />
         </mesh>
-        
-        {/* Poker felt center */}
-        <mesh position={[0, 0.14, 0]}>
-          <cylinderGeometry args={[3.2, 3.2, 0.02, 64]} />
-          <meshStandardMaterial 
-            color="#1a4a1a"
-            roughness={0.9}
-            metalness={0.05}
-          />
-        </mesh>
-        
-        {/* Refined table edge */}
-        <mesh position={[0, -0.1, 0]}>
-          <torusGeometry args={[5.0, 0.15, 16, 100]} />
-          <meshStandardMaterial 
-            color="#1a0f08"
-            metalness={0.3}
-            roughness={0.2}
-          />
-        </mesh>
-        
-        {/* Executive pedestal base - more stable */}
-        <Cylinder args={[1.8, 2.2, 0.6, 32]} position={[0, -0.3, 0]} castShadow>
-          <meshStandardMaterial 
-            color="#1a0f08"
-            metalness={0.4}
-            roughness={0.15}
+
+        {/* Modern pedestal */}
+        <Cylinder args={[1.2, 1.5, 0.5, 32]} position={[0, -0.25, 0]} castShadow>
+          <meshStandardMaterial
+            color="#ffffff"
+            metalness={0.8}
+            roughness={0.1}
           />
         </Cylinder>
-        
-        {/* Heavy base plate */}
-        <Cylinder args={[3.0, 3.0, 0.12, 32]} position={[0, -0.58, 0]} receiveShadow>
-          <meshStandardMaterial 
-            color="#0f0805"
-            metalness={0.5}
-            roughness={0.25}
+
+        {/* Base plate */}
+        <Cylinder args={[2.0, 2.0, 0.08, 32]} position={[0, -0.48, 0]} receiveShadow>
+          <meshStandardMaterial
+            color="#f0f0f0"
+            metalness={0.7}
+            roughness={0.2}
           />
         </Cylinder>
-        
-        {/* Modern conference hub */}
+
+        {/* Central holographic hub */}
         <group position={[0, 0.15, 0]}>
-          <Cylinder args={[0.5, 0.5, 0.08, 32]}>
-            <meshStandardMaterial 
-              color="#2a2a2a"
-              metalness={0.8}
+          <Cylinder args={[0.3, 0.3, 0.05, 32]}>
+            <meshStandardMaterial
+              color="#4a9eff"
+              emissive="#4a9eff"
+              emissiveIntensity={0.5}
+              metalness={0.9}
               roughness={0.1}
+              transparent
+              opacity={0.8}
             />
           </Cylinder>
-          
-          {/* Conference phone elements */}
-          <Sphere args={[0.06, 16, 16]} position={[0.2, 0.06, 0]}>
-            <meshStandardMaterial 
-              color="#00aa00"
-              emissive="#00aa00"
+
+          {/* Pulsing ring indicator */}
+          <mesh position={[0, 0.03, 0]} rotation={[0, 0, 0]}>
+            <ringGeometry args={[0.35, 0.4, 32]} />
+            <meshStandardMaterial
+              color="#4a9eff"
+              emissive="#4a9eff"
               emissiveIntensity={0.8}
+              transparent
+              opacity={0.6}
             />
-          </Sphere>
+          </mesh>
           <Sphere args={[0.06, 16, 16]} position={[-0.2, 0.06, 0]}>
             <meshStandardMaterial 
               color="#aa0000"
@@ -622,8 +506,9 @@ const TableScene = ({ players, currentSpeaker }) => {
                 </Sphere>
               </group>
             }>
-              <Avatar 
+              <Avatar
                 playerId={player.id}
+                playerName={player.name}
                 position={[position[0], position[1] + 0.2, position[2]]}
                 rotation={rotation}
                 scale={1.0}

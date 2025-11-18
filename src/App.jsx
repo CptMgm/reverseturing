@@ -18,6 +18,9 @@ function App() {
   });
   const [gameResult, setGameResult] = useState(null);
 
+  // Debug logging
+  console.log('🎮 App render - gameState:', gameState, 'playerName:', playerName);
+
   const handleNameSubmit = (name) => {
     setPlayerName(name);
     setGameState('intro');
@@ -45,6 +48,11 @@ function App() {
   return (
     <GameProvider value={{ playerName, selectedModels }}>
       <div className="min-h-screen bg-black text-white overflow-hidden">
+        {/* Debug info */}
+        <div className="fixed top-0 left-0 z-50 bg-red-900 text-white p-2 text-xs">
+          State: {gameState} | Name: {playerName || 'none'}
+        </div>
+        
         {gameState === 'name-entry' && (
           <NameEntry onSubmit={handleNameSubmit} />
         )}
