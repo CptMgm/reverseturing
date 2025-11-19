@@ -288,6 +288,52 @@ function getFallbackResponse(provider) {
   return fallbacks[provider] || "Let's continue our discussion about AI and humanity's future.";
 }
 
+// Daily.co room creation endpoint
+app.post('/api/daily/create-room', async (req, res) => {
+  const apiKey = process.env.DAILY_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({ error: 'Daily API key not configured' });
+  }
+
+  try {
+    const response = await fetch('https://api.daily.co/v1/rooms', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        properties: {
+          max_participants: 5,
+          enable_chat: false, // Using custom chat
+          enable_screenshare: false,
+          enable_recording: false,
+          start_audio_off: false,
+          exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiry
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('Daily API error:', response.status, errorData);
+      throw new Error(`Daily API error: ${response.status}`);
+    }
+
+    const room = await response.json();
+    console.log('✅ Daily room created:', room.name);
+
+    res.json({
+      url: room.url,
+      name: room.name,
+    });
+  } catch (error) {
+    console.error('Daily room creation error:', error);
+    res.status(500).json({ error: 'Failed to create Daily room' });
+  }
+});
+
 // Simple rate limiting for TTS
 let lastTTSRequest = 0;
 const TTS_RATE_LIMIT = 1000; // 1 second between requests

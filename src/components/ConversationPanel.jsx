@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import audioService from '../services/audioService';
+import TypingMessage from './TypingMessage';
 
 const ConversationPanel = ({
   conversation,
@@ -10,16 +11,32 @@ const ConversationPanel = ({
   gamePhase
 }) => {
   const [userInput, setUserInput] = useState('');
-  const [useVoiceInput, setUseVoiceInput] = useState(false);
+  const [useVoiceInput, setUseVoiceInput] = useState(true); // Default ON
   const [isListening, setIsListening] = useState(false);
   const [voiceError, setVoiceError] = useState('');
   const messagesEndRef = useRef(null);
+  const hasAutoStartedListening = useRef(false);
 
   const MAX_CHARACTERS = 230;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversation]);
+
+  // Auto-start voice input when it's the human's turn
+  useEffect(() => {
+    if (isHumanTurn && useVoiceInput && !isListening && !hasAutoStartedListening.current && audioService.speechRecognitionAvailable) {
+      // Auto-trigger voice input when it becomes the player's turn
+      console.log('🎤 Auto-starting voice input for player turn');
+      hasAutoStartedListening.current = true;
+      handleVoiceInput();
+    }
+
+    // Reset flag when it's no longer human's turn
+    if (!isHumanTurn) {
+      hasAutoStartedListening.current = false;
+    }
+  }, [isHumanTurn, useVoiceInput, isListening]);
 
   // Removed automatic TTS - now handled by GameScene to prevent duplicates
 
@@ -64,31 +81,41 @@ const ConversationPanel = ({
   };
 
   return (
-    <div className="bg-gray-900 bg-opacity-90 rounded-lg p-4 max-w-4xl mx-auto backdrop-blur-sm">
+    <div className="bg-gray-900 bg-opacity-90 rounded-lg p-4 max-w-4xl mx-auto backdrop-blur-sm h-full flex flex-col">
       {/* Conversation History */}
-      <div className="h-64 overflow-y-auto mb-4 space-y-2">
-        {conversation.map((msg, index) => (
-          <div 
-            key={index}
-            className={`p-3 rounded-lg transition-all ${
-              msg.speakerId === 'human' 
-                ? 'bg-cyan-800 bg-opacity-50 ml-8' 
-                : msg.speakerId === 'moderator'
-                ? 'bg-gray-700 mx-4'
-                : 'bg-purple-800 bg-opacity-50 mr-8'
-            }`}
-          >
-            <div className="font-bold text-sm text-gray-300 mb-1 flex items-center gap-2">
-              {msg.speakerName}
-              {msg.speakerId === currentSpeaker && (
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              )}
+      <div className="flex-1 overflow-y-auto mb-4 space-y-2">
+        {conversation.map((msg, index) => {
+          // Use shouldAnimate property from message
+          const isLatestMessage = index === conversation.length - 1;
+          const shouldAnimate = isLatestMessage && msg.shouldAnimate;
+
+          return (
+            <div
+              key={index}
+              className={`p-3 rounded-lg transition-all ${
+                msg.speakerId === 'human'
+                  ? 'bg-cyan-800 bg-opacity-50 ml-8'
+                  : msg.speakerId === 'moderator'
+                  ? 'bg-gray-700 mx-4'
+                  : 'bg-purple-800 bg-opacity-50 mr-8'
+              }`}
+            >
+              <div className="font-bold text-sm text-gray-300 mb-1 flex items-center gap-2">
+                {msg.speakerName}
+                {msg.speakerId === currentSpeaker && (
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                )}
+              </div>
+              <div className="text-white leading-relaxed">
+                {shouldAnimate ? (
+                  <TypingMessage message={msg.message} speed={20} />
+                ) : (
+                  msg.message
+                )}
+              </div>
             </div>
-            <div className="text-white leading-relaxed">
-              {msg.message}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 

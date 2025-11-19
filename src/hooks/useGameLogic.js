@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import AIService from '../services/aiProviders';
 import audioService from '../services/audioService';
+import dailyService from '../services/dailyService';
 import { aiPersonas, moderatorPrompt, getPersonaPrompt } from '../utils/aiPersonas';
 
 export const useGameLogic = (playerName, onComplete) => {
@@ -16,8 +17,12 @@ export const useGameLogic = (playerName, onComplete) => {
   const maxRounds = 3;
   const aiServicesRef = useRef({});
   const votingIndexRef = useRef(0);
+  const timingMetrics = useRef({});
+  const messageTimestamps = useRef({}); // Track when messages were added
+  const lastSpeechEndTime = useRef(null); // Track when last speech ended
 
   const players = [
+    { id: 'moderator', name: 'Dorkesh Cartel', type: 'moderator', model: 'google' },
     { id: 'human', name: playerName, type: 'human' },
     // Only 3 AI players (player1/Elongated Muskett is disabled)
     { id: 'player2', name: aiPersonas.player2.name, type: 'ai', model: aiPersonas.player2.model },
@@ -62,27 +67,66 @@ export const useGameLogic = (playerName, onComplete) => {
   }, [turnOrder, conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const initializeAudioAndStart = async () => {
-    console.log('🎮 Initializing audio and starting game');
-    
+    console.log('🎮 Initializing audio and Daily room');
+
     try {
+      // Initialize audio
       await audioService.initializeAudio();
       console.log('✅ Audio initialized successfully');
     } catch (error) {
       console.log('⚠️ Audio failed to initialize, continuing without sound');
     }
-    
+
+    try {
+      // Create and join Daily room
+      await dailyService.createAndJoinRoom();
+      console.log('✅ Daily room joined successfully');
+    } catch (error) {
+      console.error('❌ Daily room failed to initialize:', error);
+      console.log('⚠️ Continuing without Daily room');
+    }
+
     startGame();
   };
 
-  const addToConversation = async (speakerId, speakerName, message) => {
-    const newMessage = { speakerId, speakerName, message };
+  const addToConversation = async (speakerId, speakerName, message, shouldAnimate = false) => {
+    const timestamp = Date.now();
+
+    // Log time since last speech
+    if (lastSpeechEndTime.current) {
+      const timeSinceLastSpeech = timestamp - lastSpeechEndTime.current;
+      console.log(`⏱️ [INTERACTION GAP] ${(timeSinceLastSpeech / 1000).toFixed(2)}s since last person finished speaking`);
+    }
+
+    const newMessage = {
+      speakerId,
+      speakerName,
+      message,
+      timestamp,
+      shouldAnimate // Pass through the shouldAnimate parameter
+    };
     setConversation(prev => {
       const updated = [...prev, newMessage];
       console.log(`📝 Message added to conversation. Total length: ${updated.length}`);
       console.log(`📝 Latest message: ${speakerName}: ${message}`);
       return updated;
     });
+
+    messageTimestamps.current[speakerId] = timestamp;
     return newMessage;
+  };
+
+  // Helper to enable animation for the last message
+  const enableLastMessageAnimation = () => {
+    setConversation(prev => {
+      if (prev.length === 0) return prev;
+      const updated = [...prev];
+      updated[updated.length - 1] = {
+        ...updated[updated.length - 1],
+        shouldAnimate: true
+      };
+      return updated;
+    });
   };
 
   const startGame = async (currentTurnOrder = turnOrder) => {
@@ -98,12 +142,13 @@ export const useGameLogic = (playerName, onComplete) => {
     try {
       console.log('🎤 Queueing moderator intro TTS...');
       await audioService.queueSpeech(welcomeMessage, 'Dorkesh Cartel');
+      lastSpeechEndTime.current = Date.now();
       console.log('✅ Moderator intro TTS completed');
     } catch (error) {
       console.error('❌ TTS error for moderator intro:', error);
     }
 
-    console.log('⏰ Setting 2 second timeout for first question...');
+    console.log('⏰ Setting 1 second timeout for first question...');
     setTimeout(async () => {
       console.log('⏰ Timeout fired, preparing first question...');
       const firstPlayer = currentTurnOrder[0];
@@ -116,6 +161,7 @@ export const useGameLogic = (playerName, onComplete) => {
       try {
         console.log('🎤 Queueing moderator start message TTS...');
         await audioService.queueSpeech(startMessage, 'Dorkesh Cartel');
+        lastSpeechEndTime.current = Date.now();
         console.log('✅ Moderator start message TTS completed');
       } catch (error) {
         console.error('❌ TTS error for moderator start:', error);
@@ -128,19 +174,21 @@ export const useGameLogic = (playerName, onComplete) => {
       setCurrentSpeaker(firstPlayer.id);
 
       if (firstPlayer.type === 'ai') {
-        console.log('⏰ Setting 1 second timeout for AI answer...');
+        console.log('⏰ Setting 500ms timeout for AI answer...');
         setTimeout(() => {
           setIsProcessing(true);
           console.log(`🤖 ${firstPlayer.name} will answer Dorkesh's question`);
           handleAIAnswer(firstPlayer.id);
-        }, 1000);
+        }, 500);
       } else {
         console.log('👤 First player is human, waiting for input');
       }
-    }, 2000);
+    }, 1000);
   };
 
   const handleAIAnswer = async (playerId) => {
+    const turnStartTime = performance.now();
+    console.log(`⏱️ [TIMING] ========== START ${playerId} turn ==========`);
     console.log(`🔧 handleAIAnswer called for ${playerId}`);
     setIsProcessing(true);
     const player = players.find(p => p.id === playerId);
@@ -168,28 +216,42 @@ Share a personal, specific memory with genuine emotion. Be authentic and vulnera
 IMPORTANT: Only answer the question. Do NOT mention other players, hand over the turn, or reference the moderator. Just give your answer.`;
     
     let response;
+    const apiStart = performance.now();
     try {
       response = await aiService.sendMessage(
         getPersonaPrompt(playerId),
         prompt,
         currentConversation
       );
+      const apiEnd = performance.now();
+      console.log(`⏱️ [TIMING] AI API call: ${(apiEnd - apiStart).toFixed(0)}ms`);
     } catch (error) {
       console.error('❌ AI service call failed:', error);
       setIsProcessing(false);
       return;
     }
-    
-    console.log(`💬 ${player.name} responded:`, response);
-    await addToConversation(playerId, player.name, response);
 
-    // Wait for AI speech to finish before moderator speaks
+    console.log(`💬 ${player.name} responded:`, response);
+    await addToConversation(playerId, player.name, response, false); // Don't animate yet
+
+    // Wait for AI speech to finish before enabling typing animation
+    const ttsStart = performance.now();
     try {
       await audioService.queueSpeech(response, player.name);
+      lastSpeechEndTime.current = Date.now();
+
+      // Enable typing animation AFTER speech completes
+      enableLastMessageAnimation();
+
+      const ttsEnd = performance.now();
+      console.log(`⏱️ [TIMING] TTS playback: ${(ttsEnd - ttsStart).toFixed(0)}ms`);
       console.log(`✅ ${player.name} finished speaking`);
     } catch (error) {
       console.error(`❌ TTS error for ${player.name}:`, error);
     }
+
+    const turnEnd = performance.now();
+    console.log(`⏱️ [TIMING] ========== TOTAL ${player.name} turn: ${(turnEnd - turnStartTime).toFixed(0)}ms (${((turnEnd - turnStartTime)/1000).toFixed(1)}s) ==========\n`);
 
     setIsProcessing(false);
 
@@ -212,6 +274,7 @@ IMPORTANT: Only answer the question. Do NOT mention other players, hand over the
         // Wait for moderator to finish speaking before next player
         try {
           await audioService.queueSpeech(moderatorIntro, 'Dorkesh Cartel');
+          lastSpeechEndTime.current = Date.now();
           console.log('✅ Moderator finished speaking');
         } catch (error) {
           console.error('❌ Moderator TTS error:', error);
@@ -225,8 +288,8 @@ IMPORTANT: Only answer the question. Do NOT mention other players, hand over the
             handleAIAnswer(nextPlayer.id);
           }
           // If human, wait for their response
-        }, 2000);
-      }, 1500);
+        }, 800);
+      }, 600);
     } else {
       // All players answered, show pause screen
       console.log('✅ All players have answered, showing interlude');
@@ -272,6 +335,7 @@ IMPORTANT: Only answer the question. Do NOT mention other players, hand over the
 
     try {
       await audioService.queueSpeech(nextQuestionMessage, 'Dorkesh Cartel');
+      lastSpeechEndTime.current = Date.now();
       console.log('✅ Moderator finished asking next question');
     } catch (error) {
       console.error('❌ TTS error for next question:', error);
@@ -283,7 +347,7 @@ IMPORTANT: Only answer the question. Do NOT mention other players, hand over the
       if (firstPlayer.type === 'ai') {
         handleAIAnswer(firstPlayer.id);
       }
-    }, 1500);
+    }, 800);
   };
 
   const startVotingPhase = async () => {
@@ -305,11 +369,11 @@ IMPORTANT: Only answer the question. Do NOT mention other players, hand over the
       console.error('❌ TTS error for voting intro:', error);
     });
 
-    console.log('⏰ Scheduling startVoting in 2 seconds...');
+    console.log('⏰ Scheduling startVoting in 1 second...');
     setTimeout(() => {
       console.log('⏰ Timeout fired, calling startVoting');
       startVoting();
-    }, 2000);
+    }, 1000);
   };
 
   const handleHumanResponse = async (response) => {
@@ -348,8 +412,8 @@ IMPORTANT: Only answer the question. Do NOT mention other players, hand over the
             handleAIAnswer(nextPlayer.id);
           }
           // If human, wait for their response (though human shouldn't be next twice)
-        }, 2000);
-      }, 1500);
+        }, 800);
+      }, 600);
     } else {
       // All players answered, show pause screen
       console.log('🗳️ All players answered, showing interlude');
@@ -370,7 +434,8 @@ IMPORTANT: Only answer the question. Do NOT mention other players, hand over the
 
       if (currentVoter.type === 'ai') {
         console.log(`🤖 Calling handleAIVote for ${currentVoter.id}`);
-        await handleAIVote(currentVoter.id);
+        // Don't await - handleAIVote will call startVoting when done
+        handleAIVote(currentVoter.id);
       } else {
         console.log(`👨 Waiting for human to vote via UI - VotingPanel should appear`);
       }
@@ -442,6 +507,7 @@ Keep your explanation to ONE sentence (10-15 words max).`;
     // Wait for AI to finish speaking their vote before moving on
     try {
       await audioService.queueSpeech(voteResponse, player.name);
+      lastSpeechEndTime.current = Date.now();
       console.log(`✅ ${player.name} finished speaking their vote`);
     } catch (error) {
       console.error('TTS error for vote:', error);
@@ -457,7 +523,7 @@ Keep your explanation to ONE sentence (10-15 words max).`;
     setTimeout(() => {
       console.log('⏰ Calling startVoting after delay');
       startVoting();
-    }, 1000);
+    }, 600);
   };
 
   const countVotesAndAnnounceWinner = async () => {
@@ -472,6 +538,9 @@ Keep your explanation to ONE sentence (10-15 words max).`;
     );
 
     console.log('📊 Voting messages:', votingMessages.length);
+    votingMessages.forEach((msg, i) => {
+      console.log(`  ${i + 1}. ${msg.speakerName}: "${msg.message.substring(0, 80)}..."`);
+    });
 
     // Parse votes using regex
     const parsedVotes = {};
@@ -535,14 +604,23 @@ Keep your explanation to ONE sentence (10-15 words max).`;
     });
 
     console.log('\n📊 Final parsed votes:', parsedVotes);
+    console.log('📊 Total votes parsed:', Object.keys(parsedVotes).length);
+    Object.entries(parsedVotes).forEach(([voter, votedFor]) => {
+      console.log(`  ${voter} → ${votedFor}`);
+    });
 
     // Count votes
     const voteCount = {};
     Object.values(parsedVotes).forEach(votedFor => {
       voteCount[votedFor] = (voteCount[votedFor] || 0) + 1;
+      console.log(`  Adding vote for ${votedFor}, new count: ${voteCount[votedFor]}`);
     });
 
-    console.log('📊 Vote count:', voteCount);
+    console.log('\n📊 Final vote count:', voteCount);
+    console.log('📊 Vote breakdown:');
+    Object.entries(voteCount).forEach(([name, count]) => {
+      console.log(`  ${name}: ${count} vote${count !== 1 ? 's' : ''}`);
+    });
 
     // Check for ties
     const maxVotes = Math.max(...Object.values(voteCount));
@@ -580,6 +658,7 @@ Where [name] must be one of: ${tiedNames.join(', ')}`;
       // Wait for Dorkesh to speak the tiebreaker
       try {
         await audioService.queueSpeech(tiebreakerResponse, 'Dorkesh Cartel');
+        lastSpeechEndTime.current = Date.now();
         console.log('✅ Dorkesh finished speaking tiebreaker vote');
       } catch (error) {
         console.error('❌ TTS error for tiebreaker:', error);
@@ -611,6 +690,7 @@ Where [name] must be one of: ${tiedNames.join(', ')}`;
 
       try {
         await audioService.queueSpeech(tiebreakerAnnouncement, 'Dorkesh Cartel');
+        lastSpeechEndTime.current = Date.now();
         console.log('✅ Dorkesh finished final tiebreaker announcement');
       } catch (error) {
         console.error('❌ TTS error for tiebreaker announcement:', error);
@@ -652,6 +732,7 @@ Where [name] must be one of: ${tiedNames.join(', ')}`;
     // Wait for Dorkesh to finish speaking before showing results
     try {
       await audioService.queueSpeech(countingResponse, 'Dorkesh Cartel');
+      lastSpeechEndTime.current = Date.now();
       console.log('✅ Dorkesh finished announcing winner');
     } catch (error) {
       console.error('❌ TTS error for winner announcement:', error);
@@ -679,6 +760,7 @@ Where [name] must be one of: ${tiedNames.join(', ')}`;
     // Wait for human to finish speaking their vote before moving on
     try {
       await audioService.queueSpeech(voteMessage, playerName);
+      lastSpeechEndTime.current = Date.now();
       console.log(`✅ ${playerName} finished speaking their vote`);
     } catch (error) {
       console.error('TTS error for human vote:', error);
@@ -689,7 +771,7 @@ Where [name] must be one of: ${tiedNames.join(', ')}`;
 
     setTimeout(() => {
       startVoting();
-    }, 800);
+    }, 600);
   };
 
   return {

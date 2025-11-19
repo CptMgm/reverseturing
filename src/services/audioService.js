@@ -58,6 +58,17 @@ class AudioService {
       const audioUrl = URL.createObjectURL(audioBlob);
       console.log('✅ Audio URL created, calling playAudio()...');
 
+      // Play through Daily if available, otherwise play locally
+      if (speaker !== 'moderator' && speaker !== 'human') {
+        const { default: dailyService } = await import('./dailyService.js');
+        if (dailyService.isJoined) {
+          console.log(`📞 Playing audio for ${speaker} in Daily room`);
+          // Daily already plays locally, so we just need to return its promise
+          return dailyService.playAudioForBot(audioBlob, speaker);
+        }
+      }
+
+      // Fallback to local playback if Daily not available
       return this.playAudio(audioUrl);
     } catch (error) {
       console.error('❌ TTS Error:', error);
