@@ -1,107 +1,323 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 
 const GameContext = createContext();
 
 export const useGame = () => {
-  const context = useContext(GameContext);
-  if (!context) {
-    throw new Error('useGame must be used within a GameProvider');
-  }
-  return context;
+  return useContext(GameContext);
 };
 
 export const GameProvider = ({ children }) => {
   const [gameState, setGameState] = useState({
-    currentPlayer: 'human',
-    selectedAI: null,
-    currentGame: null,
-    globalScore: { human: 0, ai: 0 },
-    gameHistory: [],
-    difficulty: 5,
-    soundEnabled: true,
-    worldDominationProgress: 0,
+    phase: 'LOBBY',
+    players: {},
+    votes: {},
+    transcript: [],
+    activeSpeaker: null
   });
 
+  const [isConnected, setIsConnected] = useState(false);
+  const [dailyUrl, setDailyUrl] = useState(null);
+  const [systemError, setSystemError] = useState(null);
+  const [communicationMode, setCommunicationMode] = useState(null); // 'voice' or 'text'
+  const [showModeSelection, setShowModeSelection] = useState(false);
+  const modeSelectedRef = useRef(false); // Track if mode was already selected
+  const wsRef = useRef(null);
+  const audioQueueRef = useRef([]);
+  const isPlayingRef = useRef(false);
+  const callObjectRef = useRef(null);
+
   useEffect(() => {
-    const savedState = localStorage.getItem('worldDominationGame');
-    if (savedState) {
-      setGameState(JSON.parse(savedState));
-    }
+    // Connect to WebSocket
+    // Hardcoded to localhost:3001 for development as backend runs on a different port than frontend
+    const wsUrl = 'ws://localhost:3001';
+
+    console.log('🔌 Connecting to WebSocket:', wsUrl);
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('✅ WebSocket Connected');
+      setIsConnected(true);
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('📨 Received:', data.type);
+
+        switch (data.type) {
+          case 'GAME_STATE':
+            setGameState(prevState => ({
+              ...prevState,
+              ...data.payload
+            }));
+
+            // Show mode selection when president intro starts (only once)
+            if (data.payload.phase === 'PRESIDENT_INTRO' && !modeSelectedRef.current) {
+              setShowModeSelection(true);
+            }
+            break;
+
+          case 'AUDIO_PLAYBACK':
+            queueAudio(data.payload);
+            break;
+
+          case 'DAILY_ROOM':
+            setDailyUrl(data.payload.url);
+            break;
+
+          case 'SYSTEM_ERROR':
+            console.error('❌ SYSTEM ERROR:', data.payload.message);
+            setSystemError(data.payload.message);
+            // Auto-clear error after 10 seconds
+            setTimeout(() => setSystemError(null), 10000);
+            break;
+        }
+      } catch (error) {
+        console.error('❌ Error parsing message:', error);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('❌ WebSocket Disconnected');
+      setIsConnected(false);
+    };
+
+    return () => {
+      ws.close();
+    };
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('worldDominationGame', JSON.stringify(gameState));
-  }, [gameState]);
-
-  const selectAI = (aiProvider) => {
-    setGameState(prev => ({ ...prev, selectedAI: aiProvider }));
+  // Audio Playback Queue
+  const queueAudio = (payload) => {
+    console.log('🔊 Queuing audio from:', payload.playerId);
+    audioQueueRef.current.push(payload);
+    processAudioQueue();
   };
 
-  const startGame = (gameType) => {
-    setGameState(prev => ({ ...prev, currentGame: gameType }));
+  const startGame = (playerName) => {
+    // Unlock audio context on user interaction
+    const unlockAudio = new Audio();
+    unlockAudio.play().catch(e => console.log('Audio unlock attempt:', e));
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const name = playerName || "Player 1"; // Fallback
+      wsRef.current.send(JSON.stringify({
+        type: 'START_GAME',
+        payload: { playerName: name }
+      }));
+    }
   };
 
-  const endGame = (winner, gameType, score) => {
-    setGameState(prev => {
-      const newHistory = [...prev.gameHistory, {
-        gameType,
-        winner,
-        score,
-        timestamp: new Date().toISOString(),
-        ai: prev.selectedAI,
-      }];
+  const processAudioQueue = async () => {
+    if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
 
-      const newGlobalScore = { ...prev.globalScore };
-      if (winner === 'human') {
-        newGlobalScore.human += score;
+    isPlayingRef.current = true;
+    const item = audioQueueRef.current.shift();
+
+    try {
+      // Update active speaker in UI
+      setGameState(prev => ({ ...prev, activeSpeaker: item.playerId }));
+
+      if (item.audioData) {
+        // Play server-provided audio with phone call effect
+        // Use audio/mpeg for MP3 data from ElevenLabs
+        const audio = new Audio(`data:audio/mpeg;base64,${item.audioData}`);
+
+        let audioContext = null;
+
+        try {
+          // Create Web Audio API context for phone call effect
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioContext.createMediaElementSource(audio);
+
+          // Create bandpass filter for phone call effect (300Hz - 3400Hz)
+          const lowpass = audioContext.createBiquadFilter();
+          lowpass.type = 'lowpass';
+          lowpass.frequency.value = 3400; // Cut off high frequencies
+
+          const highpass = audioContext.createBiquadFilter();
+          highpass.type = 'highpass';
+          highpass.frequency.value = 300; // Cut off low frequencies
+
+          // Add slight distortion for realism
+          const compressor = audioContext.createDynamicsCompressor();
+          compressor.threshold.value = -20;
+          compressor.knee.value = 10;
+          compressor.ratio.value = 4;
+
+          // Connect the audio chain
+          source.connect(highpass);
+          highpass.connect(lowpass);
+          lowpass.connect(compressor);
+          compressor.connect(audioContext.destination);
+
+          console.log(`🎧 [Client] Phone effect applied for ${item.playerId}`);
+        } catch (audioError) {
+          console.warn(`⚠️ [Client] Could not apply phone effect, using raw audio:`, audioError);
+          // If Web Audio API fails, audio will still play without effect
+        }
+
+        // Handle playback errors (e.g. Autoplay blocked)
+        try {
+          console.log(`▶️ [Client] Playing audio for ${item.playerId}`);
+          await audio.play();
+        } catch (playError) {
+          console.error('❌ Playback failed (Autoplay blocked?):', playError);
+          setSystemError(`Audio Autoplay Blocked. Please interact with the page.`);
+
+          // Even if playback fails, we MUST finish the item so the game proceeds
+          if (audioContext) audioContext.close();
+          setTimeout(() => {
+            finishAudio(item.playerId);
+          }, 2000);
+          return;
+        }
+
+        audio.onended = () => {
+          console.log(`⏹️ [Client] Audio ended for ${item.playerId}`);
+          if (audioContext) {
+            audioContext.close(); // Clean up audio context
+          }
+          finishAudio(item.playerId);
+        };
+
+        // Safety timeout: if audio is long or onended fails, force finish after 30s
+        // This prevents the game from getting stuck forever
+        setTimeout(() => {
+          if (isPlayingRef.current && gameState.activeSpeaker === item.playerId) {
+            console.warn('⚠️ Audio safety timeout triggered');
+            if (audioContext) audioContext.close();
+            finishAudio(item.playerId);
+          }
+        }, 30000);
+
+        // Fallback if onended doesn't fire for some reason
+        audio.onerror = (e) => {
+          console.error('Audio element error:', e);
+          if (audioContext) audioContext.close();
+          finishAudio(item.playerId);
+        };
+
       } else {
-        newGlobalScore.ai += score;
+        console.error('❌ No audio data received for:', item.playerId);
+        // User requested NO fallbacks and explicit errors
+        setSystemError(`Missing Audio for ${item.playerId}. Check server logs/API keys.`);
+
+        // We still need to "finish" the audio so the queue doesn't get stuck, 
+        // but we'll delay it slightly to let the user see the error.
+        setTimeout(() => {
+          finishAudio(item.playerId);
+        }, 3000);
       }
-
-      const totalGames = newHistory.length;
-      const humanWins = newHistory.filter(g => g.winner === 'human').length;
-      const worldDominationProgress = Math.round((humanWins / totalGames) * 100);
-
-      return {
-        ...prev,
-        gameHistory: newHistory,
-        globalScore: newGlobalScore,
-        worldDominationProgress,
-        currentGame: null,
-      };
-    });
+    } catch (error) {
+      console.error('❌ Audio playback error:', error);
+      finishAudio(item.playerId);
+    }
   };
 
-  const setDifficulty = (level) => {
-    setGameState(prev => ({ ...prev, difficulty: level }));
+  const finishAudio = async (playerId) => {
+    console.log(`🏁 [Client] finishAudio called for ${playerId}`);
+    isPlayingRef.current = false;
+    setGameState(prev => ({ ...prev, activeSpeaker: null }));
+
+    // Notify backend that audio finished
+    if (wsRef.current && isConnected) {
+      console.log(`📤 [Client] Sending AUDIO_COMPLETE via WS for ${playerId}`);
+      wsRef.current.send(JSON.stringify({
+        type: 'AUDIO_COMPLETE',
+        payload: { playerId }
+      }));
+    } else {
+      console.warn('⚠️ [Client] WS disconnected. Sending AUDIO_COMPLETE via HTTP fallback...');
+      try {
+        await fetch('http://localhost:3001/api/game/audio-complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId })
+        });
+        console.log(`✅ [Client] HTTP fallback success for ${playerId}`);
+      } catch (e) {
+        console.error(`❌ [Client] HTTP fallback failed for ${playerId}:`, e);
+      }
+    }
+
+    processAudioQueue();
   };
 
-  const toggleSound = () => {
-    setGameState(prev => ({ ...prev, soundEnabled: !prev.soundEnabled }));
+  const sendHumanInput = (text) => {
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({
+        type: 'HUMAN_INPUT',
+        payload: { text }
+      }));
+    }
   };
 
-  const resetProgress = () => {
-    setGameState({
-      currentPlayer: 'human',
-      selectedAI: null,
-      currentGame: null,
-      globalScore: { human: 0, ai: 0 },
-      gameHistory: [],
-      difficulty: 5,
-      soundEnabled: true,
-      worldDominationProgress: 0,
-    });
+  const callPresident = () => {
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({ type: 'CALL_PRESIDENT' }));
+    }
   };
 
-  const value = {
-    gameState,
-    selectAI,
-    startGame,
-    endGame,
-    setDifficulty,
-    toggleSound,
-    resetProgress,
+  const castVote = (targetPlayerId) => {
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({
+        type: 'CAST_VOTE',
+        payload: { targetPlayerId }
+      }));
+    }
   };
 
-  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
+  const selectCommunicationMode = (mode) => {
+    console.log(`🎙️ [GameContext] User selected ${mode} mode`);
+
+    // Mark as selected (prevents modal from reopening)
+    modeSelectedRef.current = true;
+    setCommunicationMode(mode);
+    setShowModeSelection(false);
+
+    // Send mode to server
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({
+        type: 'SET_COMMUNICATION_MODE',
+        payload: { mode }
+      }));
+    }
+
+    // If text mode selected, announce it to the AIs
+    if (mode === 'text') {
+      // Send automatic message after a short delay
+      setTimeout(() => {
+        sendHumanInput("Sorry folks, my mic doesn't work. I'll use text chat.");
+      }, 1000);
+    }
+  };
+
+  const sendTypingEvent = (isTyping) => {
+    if (wsRef.current && isConnected) {
+      wsRef.current.send(JSON.stringify({
+        type: isTyping ? 'USER_TYPING_START' : 'USER_TYPING_STOP'
+      }));
+    }
+  };
+
+  return (
+    <GameContext.Provider value={{
+      gameState,
+      isConnected,
+      startGame,
+      sendHumanInput,
+      callPresident,
+      castVote,
+      dailyUrl,
+      systemError,
+      communicationMode,
+      showModeSelection,
+      selectCommunicationMode,
+      sendTypingEvent
+    }}>
+      {children}
+    </GameContext.Provider>
+  );
 };

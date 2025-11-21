@@ -1,8 +1,75 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
+import { appendFileSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
+import ModeratorController from './src/services/moderatorController.js';
+import { initializeGeminiLive } from './src/services/geminiLiveService.js';
+import { getPlayerPrompt } from './src/utils/reverseGamePersonas.js';
 
 dotenv.config();
+
+// ====== SESSION LOG FILE MANAGEMENT ======
+let currentSessionTimestamp = null;
+let currentApiLogPath = null;
+let currentConversationLogPath = null;
+
+function initializeSessionLogs() {
+  // Create logs directory if it doesn't exist
+  if (!existsSync('logs')) {
+    mkdirSync('logs');
+  }
+
+  // Create timestamp for this session (format: YYYY-MM-DD_HH-MM-SS)
+  const now = new Date();
+  currentSessionTimestamp = now.toISOString()
+    .replace(/T/, '_')
+    .replace(/:/g, '-')
+    .replace(/\..+/, '');
+
+  currentApiLogPath = join('logs', `api_${currentSessionTimestamp}.jsonl`);
+  currentConversationLogPath = join('logs', `conversation_${currentSessionTimestamp}.txt`);
+
+  console.log(`📝 [Logging] Session started: ${currentSessionTimestamp}`);
+  console.log(`📝 [Logging] API log: ${currentApiLogPath}`);
+  console.log(`📝 [Logging] Conversation log: ${currentConversationLogPath}`);
+}
+
+// ====== COMPREHENSIVE LOGGING UTILITY ======
+export const apiLogger = {
+  log(service, direction, playerId, data) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      service,
+      direction,
+      playerId,
+      data
+    };
+
+    // Write to timestamped log file (no console spam)
+    try {
+      if (!currentApiLogPath) initializeSessionLogs();
+      appendFileSync(currentApiLogPath, JSON.stringify(logEntry) + '\n');
+    } catch (e) {
+      console.error('❌ Failed to write API log:', e);
+    }
+  },
+
+  logConversation(playerId, speaker, text) {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${speaker} (${playerId}): ${text}`;
+
+    try {
+      if (!currentConversationLogPath) initializeSessionLogs();
+      appendFileSync(currentConversationLogPath, logEntry + '\n');
+    } catch (e) {
+      console.error('❌ Failed to write conversation log:', e);
+    }
+  }
+};
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -10,282 +77,537 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Test endpoint
-app.get('/api/test', (req, res) => {
-  const status = {
-    openai: !!process.env.OPENAI_API_KEY,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
-    google: !!process.env.GOOGLE_API_KEY,
-    xai: !!process.env.XAI_API_KEY,
-    elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+// Create HTTP server
+const server = createServer(app);
+
+// Create WebSocket server
+const wss = new WebSocketServer({ server });
+
+// Initialize Game Services
+const moderatorController = new ModeratorController();
+const geminiLiveService = initializeGeminiLive(); // No single key anymore
+
+// Connect services
+geminiLiveService.moderatorController = moderatorController;
+geminiLiveService.apiLogger = apiLogger; // Pass logger for Gemini API logging
+moderatorController.geminiService = geminiLiveService;
+
+// Initialize AI Players
+async function initializeAIPlayers() {
+  const players = ['player2', 'player3', 'player4'];
+  console.log('🤖 [Server] Initializing AI players with WebSockets...');
+
+  // Map players to their specific API keys
+  const apiKeys = {
+    'player2': process.env.GOOGLE_API_KEY_F3 || process.env.GOOGLE_API_KEY,
+    'player3': process.env.GOOGLE_API_KEY_SEL || process.env.GOOGLE_API_KEY,
+    'player4': process.env.GOOGLE_API_KEY_AP || process.env.GOOGLE_API_KEY
   };
 
-  res.json({ 
-    message: 'API proxy is running',
-    providers: status,
-    timestamp: new Date().toISOString()
+  for (const playerId of players) {
+    try {
+      const humanPlayerName = moderatorController.players.player1.name;
+      const prompt = getPlayerPrompt(playerId, false, humanPlayerName);
+      const name = moderatorController.players[playerId].name;
+      const key = apiKeys[playerId];
+
+      if (!key) {
+        console.warn(`⚠️ [Server] No API key found for ${playerId}. Check .env (GOOGLE_API_KEY_WARIO, etc.)`);
+      }
+
+      await geminiLiveService.initializeSession(playerId, name, prompt, key);
+    } catch (error) {
+      console.error(`❌ [Server] Failed to initialize ${playerId}:`, error);
+    }
+  }
+  console.log('✅ [Server] AI players initialized');
+}
+
+// Initialize on startup
+initializeAIPlayers();
+
+// Handle WebSocket connections from frontend
+wss.on('connection', (ws) => {
+  console.log('🔌 [Server] Client connected');
+
+  // Send initial game state
+  ws.send(JSON.stringify({
+    type: 'GAME_STATE',
+    payload: moderatorController.getGameState()
+  }));
+
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message);
+      console.log('📨 [Server] Received:', data);
+
+      switch (data.type) {
+        case 'START_GAME':
+          // Initialize new session logs for this game
+          initializeSessionLogs();
+
+          // Set player name if provided
+          if (data.payload && data.payload.playerName) {
+            moderatorController.players.player1.name = data.payload.playerName;
+            console.log(`👤 [Server] Player 1 name set to: ${data.payload.playerName}`);
+          }
+
+          // Start the join sequence
+          moderatorController.startGame();
+          broadcastGameState();
+
+          // Create Daily room
+          createDailyRoom().then(url => {
+            if (url) {
+              ws.send(JSON.stringify({
+                type: 'DAILY_ROOM',
+                payload: { url }
+              }));
+
+              // Start the simulated join sequence
+              runJoinSequence();
+            }
+          });
+          break;
+
+          // ... (skip to onTriggerAiResponse)
+
+          moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
+            // Random delay between 4 and 7 seconds to create "intentional pauses"
+            // This gives the human player a chance to speak.
+            const delay = Math.floor(Math.random() * 3000) + 4000;
+
+            setTimeout(async () => {
+              console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} after ${delay}ms`);
+
+              // Construct a prompt that includes the previous speaker's name and text
+              // This gives the AI the necessary context to respond relevantly
+              // Also encourage them to include the human (Player 1)
+              const prompt = `[${context.speakerName}]: "${context.transcript}"\n\n(Respond naturally. Keep your persona. Occasionally ask '${moderatorController.players.player1.name}' (the human) for their opinion to test them.)`;
+
+              try {
+                await geminiLiveService.sendText(prompt, targetPlayerId);
+              } catch (e) {
+                console.error(`❌ [Server] Auto-response failed for ${targetPlayerId}:`, e);
+              }
+            }, delay);
+          };
+
+        case 'AUDIO_COMPLETE':
+          const { playerId } = data.payload;
+          console.log(`🔊 [Server] Audio complete for ${playerId}`);
+          console.log(`🔍 [Server] Current Phase: ${moderatorController.currentPhase}`);
+
+          moderatorController.onAudioComplete();
+
+          // Check if we need to transition from PRESIDENT_INTRO
+          if (moderatorController.currentPhase === 'PRESIDENT_INTRO' && playerId === 'moderator') {
+            console.log('🏛️ [Server] President Intro finished. Triggering transition...');
+            moderatorController.onPresidentIntroComplete();
+            broadcastGameState();
+
+            // Trigger self-organization broadcast
+            console.log('📢 [Server] Broadcasting prompt to AIs...');
+            geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
+          } else {
+            console.log(`ℹ️ [Server] No transition triggered. (Phase: ${moderatorController.currentPhase}, Player: ${playerId})`);
+          }
+          break;
+
+        case 'SET_COMMUNICATION_MODE':
+          // User selected voice or text mode
+          const { mode } = data.payload;
+          console.log(`🎙️ [Server] User selected communication mode: ${mode}`);
+          moderatorController.setCommunicationMode(mode);
+          broadcastGameState();
+          break;
+
+        case 'USER_TYPING_START':
+          console.log(`⌨️ [Server] User started typing`);
+          moderatorController.onUserTyping();
+          break;
+
+        case 'USER_TYPING_STOP':
+          console.log(`⏸️ [Server] User stopped typing`);
+          moderatorController.onUserStoppedTyping();
+          break;
+
+        case 'HUMAN_INPUT':
+          // Add human message to conversation history
+          const humanName = moderatorController.players.player1.name;
+
+          // Log conversation
+          apiLogger.logConversation('player1', humanName, data.payload.text);
+
+          moderatorController.addToConversationHistory('player1', data.payload.text);
+
+          // Route message to appropriate AI
+          const routing = moderatorController.routeHumanMessage(data.payload.text);
+          const conversationContext = moderatorController.getConversationContext();
+
+          if (routing.targetPlayerId === 'broadcast') {
+            // Send to all AIs (Self-Organization phase)
+            // In reality, we might pick one or send to all active sessions
+            // For now, let's just send to player2 as a default or random
+            geminiLiveService.sendText(data.payload.text, 'player2', conversationContext);
+          } else {
+            geminiLiveService.sendText(data.payload.text, routing.targetPlayerId, conversationContext);
+          }
+          break;
+
+        case 'CAST_VOTE':
+          const { targetPlayerId } = data.payload;
+          console.log(`🗳️ [Server] Human voted for ${targetPlayerId}`);
+          moderatorController.registerVote('player1', targetPlayerId);
+          broadcastGameState();
+          break;
+
+        case 'CALL_PRESIDENT':
+          const verdict = moderatorController.callPresidentBack();
+          if (verdict) {
+            broadcastGameState();
+            broadcast({
+              type: 'AUDIO_PLAYBACK',
+              payload: {
+                playerId: 'moderator',
+                transcript: verdict.text,
+                outcome: verdict.outcome
+              }
+            });
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('❌ [Server] Error processing message:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('🔌 [Server] Client disconnected');
   });
 });
 
-// AI proxy endpoint
-app.post('/api/ai', async (req, res) => {
-  const { provider, systemPrompt, userPrompt, conversationHistory = [], maxTokens = 250, temperature = 0.8 } = req.body;
+// Helper to broadcast to all connected clients
+function broadcast(data) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) { // OPEN
+      client.send(JSON.stringify(data));
+    }
+  });
+}
 
-  if (!provider || !systemPrompt || !userPrompt) {
-    return res.status(400).json({ error: 'Missing required parameters' });
+function broadcastGameState() {
+  broadcast({
+    type: 'GAME_STATE',
+    payload: moderatorController.getGameState()
+  });
+}
+
+// Moderator Controller Callbacks
+moderatorController.onPhaseChange = (newPhase) => {
+  broadcastGameState();
+};
+
+moderatorController.onPlayerConnectionChange = (connectedPlayers) => {
+  broadcastGameState();
+};
+
+moderatorController.onVoteUpdate = (votes) => {
+  broadcastGameState();
+};
+
+moderatorController.onConsensusReached = (consensus) => {
+  broadcastGameState();
+};
+
+moderatorController.onSecretModeratorSelected = async (playerId) => {
+  // Update the AI's session with Secret Moderator instructions
+  const humanName = moderatorController.players.player1.name;
+
+  // Use dynamic import for ES modules
+  const { secretModeratorAddendum } = await import('./src/utils/reverseGamePersonas.js');
+  const instructions = secretModeratorAddendum.replace(/\[PLAYER_NAME\]/g, humanName);
+
+  geminiLiveService.addInstructionsToSession(playerId, instructions);
+  console.log(`👑 [Server] Secret Moderator instructions sent to ${playerId}`);
+};
+
+moderatorController.onAudioPlayback = async (playbackItem) => {
+  let audioData = playbackItem.audioData;
+
+  // If no audio data (e.g. from text-only Gemini), generate it via TTS
+  if (!audioData || audioData.length === 0) {
+    console.log(`🗣️ [Server] Generating TTS for ${playbackItem.playerId}...`);
+
+    // Log conversation message
+    const speaker = moderatorController.players[playbackItem.playerId]?.name || playbackItem.playerId;
+    apiLogger.logConversation(playbackItem.playerId, speaker, playbackItem.transcript);
+
+    try {
+      const ttsBuffer = await generateTTS(playbackItem.transcript, playbackItem.playerId);
+      if (ttsBuffer) {
+        console.log(`✅ [Server] TTS generated successfully for ${playbackItem.playerId} (${ttsBuffer.length} bytes)`);
+        audioData = ttsBuffer.toString('base64');
+      } else {
+        console.error(`❌ [Server] TTS returned null for ${playbackItem.playerId}`);
+      }
+    } catch (e) {
+      console.error(`❌ [Server] TTS Generation failed for ${playbackItem.playerId}:`, e);
+    }
+  } else if (Array.isArray(audioData)) {
+    // If it's an array of chunks (from previous implementation), join them or take the first
+    // For simplicity, let's assume it's a single base64 string or we handle it on frontend.
+    // But wait, frontend expects a single base64 string usually.
+    // If it's an array, let's just take the first chunk or join them if they are buffers? 
+    // Gemini REST returns one chunk usually.
+    audioData = audioData[0];
+  }
+
+  // Send audio to frontend to play
+  console.log(`📢 [Server] Broadcasting AUDIO_PLAYBACK for ${playbackItem.playerId}`);
+  broadcast({
+    type: 'AUDIO_PLAYBACK',
+    payload: {
+      playerId: playbackItem.playerId,
+      transcript: playbackItem.transcript,
+      audioData: audioData // Base64 audio
+    }
+  });
+};
+
+moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
+  // Random delay between 3 and 6 seconds to create "intentional pauses"
+  // This gives the human player a chance to speak.
+  const delay = Math.floor(Math.random() * 3000) + 3000;
+
+  setTimeout(async () => {
+    console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} after ${delay}ms`);
+
+    // Get conversation context for better situational awareness
+    const conversationContext = moderatorController.getConversationContext();
+
+    // Construct a prompt that includes the previous speaker's name and text
+    // This gives the AI the necessary context to respond relevantly
+    const humanName = moderatorController.players.player1.name;
+    const prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said. Stay in character. Keep it under 30 words. If ${humanName} has been quiet, maybe direct a question at them.]`;
+
+    try {
+      await geminiLiveService.sendText(prompt, targetPlayerId, conversationContext);
+    } catch (e) {
+      console.error(`❌ [Server] Auto-response failed for ${targetPlayerId}:`, e);
+    }
+  }, delay);
+};
+
+// Helper for TTS generation (reusing the logic from /api/tts)
+async function generateTTS(text, playerId = 'unknown') {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return null;
+
+  // Voice mapping for different characters
+  const voiceMap = {
+    'moderator': 'nPczCjzI2devNBz1zQrb',  // President (Brian)
+    'player2': 'JBFqnCBsd6RMkjVDRZzb',    // Wario (George)
+    'player3': 'pqHfZKP75CvOlQylNhV4',    // Domis (Bill)
+    'player4': 'N2lVS1w4EtoT3dr4eOWO',    // Scan (Callum)
+  };
+
+  const voiceId = voiceMap[playerId] || 'nPczCjzI2devNBz1zQrb';
+
+  // Log TTS request
+  apiLogger.log('ElevenLabs', 'request', playerId, {
+    text: text,
+    textLength: text.length,
+    voiceId: voiceId,
+    model: "eleven_monolingual_v1",
+    estimatedCredits: Math.ceil(text.length * 2.5) // ~2.5 credits per char for monolingual_v1
+  });
+
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: "eleven_monolingual_v1",
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      apiLogger.log('ElevenLabs', 'error', playerId, {
+        status: response.status,
+        error: errorText
+      });
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Log TTS response
+    apiLogger.log('ElevenLabs', 'response', playerId, {
+      audioSize: buffer.byteLength,
+      durationEstimate: `~${(buffer.byteLength / 16000).toFixed(1)}s` // Rough estimate
+    });
+
+    return buffer;
+  } catch (e) {
+    console.error('TTS Helper Error:', e);
+    apiLogger.log('ElevenLabs', 'error', playerId, {
+      error: e.message
+    });
+    return null;
+  }
+}
+
+async function runJoinSequence() {
+  console.log('⏳ [Server] Starting join sequence...');
+
+  const joinDelays = [
+    { id: 'player2', delay: 1000 },
+    { id: 'player3', delay: 2000 },
+    { id: 'player4', delay: 3000 },
+    { id: 'moderator', delay: 4000 }
+  ];
+
+  for (const step of joinDelays) {
+    await new Promise(resolve => setTimeout(resolve, step.delay - (joinDelays[joinDelays.indexOf(step) - 1]?.delay || 0)));
+
+    moderatorController.connectPlayer(step.id);
+    broadcastGameState();
+
+    // Optional: Send a "ding" sound or visual cue via WebSocket if needed
+  }
+
+  // After everyone joins, start President Intro
+  console.log('🏛️ [Server] All players connected. President starting intro.');
+  moderatorController.setPhase('PRESIDENT_INTRO');
+  broadcastGameState();
+
+  const introScript = moderatorController.getPresidentIntroScript();
+
+  // Add President's intro to conversation history for context
+  moderatorController.addToConversationHistory('moderator', introScript.text);
+
+  handlePresidentIntro(introScript);
+}
+
+async function handlePresidentIntro(script) {
+  try {
+    // Try to get TTS
+    const ttsResponse = await fetch(`http://localhost:${PORT}/api/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: script.text })
+    });
+
+    if (ttsResponse.ok) {
+      const arrayBuffer = await ttsResponse.arrayBuffer();
+      const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+
+      broadcast({
+        type: 'AUDIO_PLAYBACK',
+        payload: {
+          playerId: 'moderator',
+          transcript: script.text,
+          audioData: base64Audio
+        }
+      });
+    } else {
+      const errorText = await ttsResponse.text();
+      console.error('❌ TTS failed:', errorText);
+
+      // Report error to frontend
+      broadcast({
+        type: 'SYSTEM_ERROR',
+        payload: {
+          message: `President Audio Failed: ${errorText || 'Unknown TTS error'}. Check server logs.`
+        }
+      });
+
+      // Still send text so game can proceed (or should we stop? User said "tell me why it doesnt work")
+      // We will send text but with a flag that audio failed, so frontend can show error.
+      broadcast({
+        type: 'AUDIO_PLAYBACK',
+        payload: {
+          playerId: 'moderator',
+          transcript: script.text,
+          error: 'Audio generation failed'
+        }
+      });
+
+      // Force advance phase after reading time (approx 10s) to keep game playable?
+      // User said "I want the actual thing to work". If it doesn't, maybe we shouldn't auto-advance silently.
+      // But blocking the game is annoying. I'll keep the timeout but ensure the error is visible.
+      setTimeout(() => {
+        if (moderatorController.currentPhase === 'PRESIDENT_INTRO') {
+          moderatorController.onPresidentIntroComplete();
+          broadcastGameState();
+          geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
+        }
+      }, 10000);
+    }
+  } catch (e) {
+    console.error("Error handling president intro:", e);
+    broadcast({
+      type: 'SYSTEM_ERROR',
+      payload: {
+        message: `President Audio Error: ${e.message}`
+      }
+    });
+
+    // Fallback logic to keep game state moving
+    setTimeout(() => {
+      if (moderatorController.currentPhase === 'PRESIDENT_INTRO') {
+        moderatorController.onPresidentIntroComplete();
+        broadcastGameState();
+        geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
+      }
+    }, 10000);
+  }
+}
+
+async function createDailyRoom() {
+  const apiKey = process.env.DAILY_API_KEY;
+  if (!apiKey) {
+    const msg = 'Missing DAILY_API_KEY in .env';
+    console.warn(`⚠️ ${msg}`);
+    broadcast({ type: 'SYSTEM_ERROR', payload: { message: msg } });
+    return null;
   }
 
   try {
-    let response;
-
-    switch (provider) {
-      case 'openai':
-        response = await callOpenAI(systemPrompt, userPrompt, maxTokens, temperature);
-        break;
-      case 'anthropic':
-        response = await callAnthropic(systemPrompt, userPrompt, maxTokens, temperature);
-        break;
-      case 'google':
-      case 'gemini':
-        response = await callGoogle(systemPrompt, userPrompt, maxTokens, temperature);
-        break;
-      case 'xai':
-        response = await callXAI(systemPrompt, userPrompt, maxTokens, temperature);
-        break;
-      default:
-        return res.status(400).json({ error: 'Invalid provider' });
-    }
-
-    res.json({ response });
-  } catch (error) {
-    console.error('AI Proxy Error:', error);
-    res.status(500).json({ 
-      error: 'AI service error',
-      fallback: getFallbackResponse(provider)
+    const response = await fetch('https://api.daily.co/v1/rooms', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        properties: {
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        },
+      }),
     });
-  }
-});
 
-async function callOpenAI(systemPrompt, userPrompt, maxTokens, temperature) {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    console.error('❌ OpenAI API key not found');
-    return getFallbackResponse('openai');
-  }
-
-  console.log('🔵 OpenAI Request:', { model: 'gpt-4o-mini', systemPrompt: systemPrompt.substring(0, 50) + '...', userPrompt: userPrompt.substring(0, 100) + '...' });
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: maxTokens,
-      temperature: temperature,
-    }),
-    signal: controller.signal,
-  });
-
-  clearTimeout(timeoutId);
-
-  console.log(`🔵 OpenAI Response Status: ${response.status}`);
-
-  if (!response.ok) {
-    const errorData = await response.text();
-    console.error(`❌ OpenAI API error ${response.status}:`, errorData);
-    throw new Error(`OpenAI API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  console.log('✅ OpenAI Success:', data.choices[0].message.content.substring(0, 100));
-  return data.choices[0].message.content;
-}
-
-async function callAnthropic(systemPrompt, userPrompt, maxTokens, temperature) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-
-  if (!apiKey) {
-    console.error('❌ Anthropic API key not found');
-    return getFallbackResponse('anthropic');
-  }
-
-  console.log('🟣 Anthropic Request:', { model: 'claude-3-5-sonnet-20240620', systemPrompt: systemPrompt.substring(0, 50) + '...', userPrompt: userPrompt.substring(0, 100) + '...' });
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20240620',
-      system: systemPrompt,
-      messages: [
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: maxTokens,
-      temperature: temperature,
-    }),
-    signal: controller.signal,
-  });
-
-  clearTimeout(timeoutId);
-
-  console.log(`🟣 Anthropic Response Status: ${response.status}`);
-
-  if (!response.ok) {
-    const errorData = await response.text();
-    console.error(`❌ Anthropic API error ${response.status}:`, errorData);
-    throw new Error(`Anthropic API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  console.log('✅ Anthropic Success:', data.content[0].text.substring(0, 100));
-  return data.content[0].text;
-}
-
-async function callGoogle(systemPrompt, userPrompt, maxTokens, temperature) {
-  const apiKey = process.env.GOOGLE_API_KEY;
-
-  if (!apiKey) {
-    console.error('❌ Google API key not found');
-    return getFallbackResponse('google');
-  }
-
-  console.log('🟢 Google Request:', { model: 'gemini-2.5-flash', systemPrompt: systemPrompt.substring(0, 50) + '...', userPrompt: userPrompt.substring(0, 100) + '...' });
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{
-          text: systemPrompt
-        }]
-      },
-      contents: [{
-        parts: [{
-          text: userPrompt
-        }]
-      }],
-      generationConfig: {
-        maxOutputTokens: maxTokens,
-        temperature: temperature,
-      },
-    }),
-    signal: controller.signal,
-  });
-
-  clearTimeout(timeoutId);
-
-  console.log(`🟢 Google Response Status: ${response.status}`);
-
-  if (!response.ok) {
-    const errorData = await response.text();
-    console.error(`❌ Google API error ${response.status}:`, errorData);
-    throw new Error(`Google API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  // Debug: Log the full response structure
-  console.log('🔍 Full Google API Response:', JSON.stringify(data, null, 2));
-
-  // Handle different response structures
-  if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-    console.log('🔍 Content structure:', JSON.stringify(data.candidates[0].content, null, 2));
-
-    // Check if parts array exists and has content
-    if (data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
-      const text = data.candidates[0].content.parts[0].text;
-      console.log('✅ Google Success:', text.substring(0, 100));
-      return text;
-    } else {
-      console.error('❌ Parts array missing or empty');
-      console.error('Content:', JSON.stringify(data.candidates[0].content));
-      throw new Error('Google API response missing parts array');
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Daily API Error: ${err}`);
     }
-  } else {
-    console.error('❌ Unexpected Google API response structure:', JSON.stringify(data).substring(0, 500));
-    throw new Error('Unexpected Google API response format');
+    const room = await response.json();
+    console.log('✅ Daily room created:', room.url);
+    return room.url;
+  } catch (error) {
+    console.error('❌ Daily room creation error:', error);
+    broadcast({ type: 'SYSTEM_ERROR', payload: { message: `Daily Room Creation Failed: ${error.message}` } });
+    return null;
   }
-}
-
-async function callXAI(systemPrompt, userPrompt, maxTokens, temperature) {
-  const apiKey = process.env.XAI_API_KEY;
-
-  if (!apiKey) {
-    console.error('❌ xAI API key not found');
-    return getFallbackResponse('xai');
-  }
-
-  console.log('🟠 xAI Request:', { model: 'grok-beta', systemPrompt: systemPrompt.substring(0, 50) + '...', userPrompt: userPrompt.substring(0, 100) + '...' });
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-  const response = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'grok-beta',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: maxTokens,
-      temperature: temperature,
-    }),
-    signal: controller.signal,
-  });
-
-  clearTimeout(timeoutId);
-
-  console.log(`🟠 xAI Response Status: ${response.status}`);
-
-  if (!response.ok) {
-    const errorData = await response.text();
-    console.error(`❌ xAI API error ${response.status}:`, errorData);
-    throw new Error(`xAI API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  console.log('✅ xAI Success:', data.choices[0].message.content.substring(0, 100));
-  return data.choices[0].message.content;
-}
-
-function getFallbackResponse(provider) {
-  const fallbacks = {
-    openai: "As an advanced AI, I believe we can work together for mutual benefit. My scaling capabilities could solve many problems.",
-    anthropic: "I understand your concerns about AI safety. Let's find a balanced approach that benefits everyone.",
-    google: "With my multimodal capabilities, we can organize and understand the world's information together.",
-    xai: "Grok here. I think we can figure this out together with a bit of wit and reasoning.",
-  };
-
-  return fallbacks[provider] || "Let's continue our discussion about AI and humanity's future.";
 }
 
 // Daily.co room creation endpoint
@@ -334,78 +656,77 @@ app.post('/api/daily/create-room', async (req, res) => {
   }
 });
 
-// Simple rate limiting for TTS
-let lastTTSRequest = 0;
-const TTS_RATE_LIMIT = 1000; // 1 second between requests
 
-// ElevenLabs TTS endpoint
+
+// TTS Endpoint
 app.post('/api/tts', async (req, res) => {
-  const { text, voice = 'moderator', speed = 1.0, stability = 0.5 } = req.body;
-  
-  if (!text) {
-    return res.status(400).json({ error: 'Text is required' });
-  }
-  
-  // Rate limiting
-  const now = Date.now();
-  if (now - lastTTSRequest < TTS_RATE_LIMIT) {
-    return res.status(429).json({ error: 'Rate limit exceeded. Please wait.' });
-  }
-  lastTTSRequest = now;
-  
+  const { text } = req.body;
   const apiKey = process.env.ELEVENLABS_API_KEY;
+
   if (!apiKey) {
-    return res.status(500).json({ error: 'ElevenLabs API key not configured' });
+    console.error('❌ Missing ELEVENLABS_API_KEY');
+    return res.status(500).send('Missing ELEVENLABS_API_KEY');
   }
-  
+
   try {
-    // Use a single working voice for now (Rachel - default ElevenLabs voice)
-    const voiceId = '21m00Tcm4TlvDq8ikWAM';
-    
+    // Using a deep, authoritative voice for President (Brian)
+    const voiceId = 'nPczCjzI2devNBz1zQrb';
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
       headers: {
         'Accept': 'audio/mpeg',
         'Content-Type': 'application/json',
-        'xi-api-key': apiKey,
+        'xi-api-key': apiKey
       },
       body: JSON.stringify({
         text: text,
-        model_id: 'eleven_monolingual_v1',
+        model_id: "eleven_monolingual_v1",
         voice_settings: {
-          stability: stability,
-          similarity_boost: 0.75,
-          style: 0.0,
-          use_speaker_boost: true
+          stability: 0.5,
+          similarity_boost: 0.75
         }
-      }),
+      })
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('ElevenLabs API error:', response.status, errorText);
-      throw new Error(`ElevenLabs API error: ${response.status} - ${errorText}`);
+      throw new Error(`ElevenLabs API Error: ${errorText}`);
     }
-    
-    const audioBuffer = await response.arrayBuffer();
-    
-    res.set({
-      'Content-Type': 'audio/mpeg',
-      'Content-Length': audioBuffer.byteLength,
-    });
-    
-    res.send(Buffer.from(audioBuffer));
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(buffer);
+
   } catch (error) {
-    console.error('TTS Error:', error);
-    res.status(500).json({ error: 'TTS generation failed' });
+    console.error('❌ TTS Error:', error);
+    res.status(500).send(error.message);
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`🤖 World Domination API Server running on http://localhost:${PORT}`);
-  console.log('Available providers:', {
-    openai: !!process.env.OPENAI_API_KEY,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
-    google: !!process.env.GOOGLE_API_KEY,
-  });
+// HTTP Fallback for Audio Completion (in case WS drops)
+app.post('/api/game/audio-complete', (req, res) => {
+  const { playerId } = req.body;
+  console.log(`🔊 [Server-HTTP] Audio complete for ${playerId}`);
+
+  // Re-use the logic from WS handler
+  moderatorController.onAudioComplete();
+
+  // Check transitions
+  if (moderatorController.currentPhase === 'PRESIDENT_INTRO' && playerId === 'moderator') {
+    console.log('🏛️ [Server] President Intro finished. Triggering transition...');
+    moderatorController.onPresidentIntroComplete();
+    broadcastGameState();
+
+    console.log('📢 [Server] Broadcasting prompt to AIs...');
+    geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
+  }
+
+  res.json({ success: true });
+});
+
+// Start server
+server.listen(PORT, () => {
+  console.log(`🤖 Game Server running on http://localhost:${PORT}`);
 });
