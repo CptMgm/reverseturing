@@ -10,7 +10,9 @@
     "build:dev": "vite build --mode development",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:conversation": "node tests/test-conversation-sim.js",
+    "test:gemini": "node tests/test-real-gemini.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.59.0",

@@ -29,6 +29,14 @@ const GameRoom = () => {
     const dailyRef = useRef(null);
     const callFrameRef = useRef(null);
     const typingTimeoutRef = useRef(null);
+    const chatEndRef = useRef(null);
+
+    // Auto-scroll chat to bottom when new messages arrive
+    useEffect(() => {
+        if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [gameState.conversationHistory]);
 
     useEffect(() => {
         if (dailyUrl && !callFrameRef.current) {
@@ -179,12 +187,31 @@ const GameRoom = () => {
                                     </button>
                                 </div>
 
-                                {/* Chat Messages - Scrollable */}
+                                {/* Chat Messages - Scrollable (only show user messages) */}
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                    {/* TODO: Display conversation history here */}
-                                    <div className="text-gray-400 text-sm text-center">
-                                        Chat messages will appear here
-                                    </div>
+                                    {gameState.conversationHistory && gameState.conversationHistory.length > 0 ? (
+                                        <>
+                                            {gameState.conversationHistory
+                                                .filter(msg => msg.playerId === 'player1') // Only show user's messages
+                                                .map((msg, idx) => (
+                                                    <div key={idx} className="text-right">
+                                                        <div className="inline-block max-w-[80%] rounded-lg p-2 text-sm bg-blue-600 text-white">
+                                                            <div className="font-bold text-xs mb-1 opacity-70">
+                                                                {msg.speaker}
+                                                            </div>
+                                                            <div>{msg.text}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            <div ref={chatEndRef} />
+                                        </>
+                                    ) : null}
+                                    {/* Always show placeholder if no user messages */}
+                                    {!gameState.conversationHistory?.some(msg => msg.playerId === 'player1') && (
+                                        <div className="text-gray-400 text-sm text-center">
+                                            Your messages will appear here
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Chat Input */}
@@ -228,6 +255,41 @@ const GameRoom = () => {
                         </button>
                     )}
                 </div>
+            </div>
+
+            {/* Bottom Call Controls */}
+            <div className="bg-gray-800 border-t border-gray-700 p-4 flex justify-center items-center gap-4 z-10">
+                {/* Mute Button */}
+                <button
+                    disabled={communicationMode === 'text'}
+                    className={`p-4 rounded-full transition-all ${communicationMode === 'text'
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            : 'bg-gray-700 hover:bg-red-600 text-white'
+                        }`}
+                    title={communicationMode === 'text' ? 'Text mode only' : 'Mute (not implemented)'}
+                >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                    </svg>
+                </button>
+
+                {/* Hang Up Button */}
+                <button
+                    onClick={() => {
+                        // Play hang up sound
+                        new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(e => { });
+                        // Reload page after short delay
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 500);
+                    }}
+                    className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all shadow-lg hover:shadow-red-500/50"
+                    title="Hang up and leave"
+                >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                    </svg>
+                </button>
             </div>
 
             {/* President Overlay */}

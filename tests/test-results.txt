@@ -1,0 +1,255 @@
+
+> reverse-turing@0.0.0 test:conversation
+> node tests/test-conversation-sim.js
+
+
+
+╔═══════════════════════════════════════════════════════════╗
+║     REVERSE TURING TEST - CONVERSATION SIMULATION         ║
+╚═══════════════════════════════════════════════════════════╝
+
+======================================================================
+🎮 RUNNING SIMULATION: Silent User (Never Responds)
+======================================================================
+
+🎬 Conversation Started...
+
+[0.0s] President: "Identify the human. You have minutes to decide."
+[7.3s] Wario: "I think we need to vote soon."
+[9.8s] Domis: "I think we need to vote soon."
+[15.1s] Scan: "So Wario, are YOU gonna say something?"
+[20.0s] Wario: "Domis, YOU've been suspicious this whole time"
+[25.6s] Domis: "Scan, YOU've been suspicious this whole time"
+[31.2s] Scan: "So Domis, are YOU gonna say something?"
+[36.5s] Wario: "Scan, what do YOU think about this?"
+[42.1s] Domis: "Wario, YOU've been suspicious this whole time"
+[46.6s] Scan: "This is insane. We're all gonna die."
+[52.4s] Wario: "So Domis, are YOU gonna say something?"
+[61.2s] Domis: "So Wario, are YOU gonna say something?"
+
+🏁 Conversation Ended
+
+
+╔═══════════════════════════════════════════════════════════╗
+║           CONVERSATION ANALYSIS REPORT                      ║
+╚═══════════════════════════════════════════════════════════╝
+
+📊 MESSAGE STATISTICS:
+  Total Messages: 11
+  User Messages: 0 (0.0%)
+  AI Messages: 11 (100.0%)
+
+❓ ENGAGEMENT METRICS:
+  Questions Asked: 5
+  User Directly Questioned: 5 times
+  User Engagement Rate: 0.0%
+
+📝 MESSAGE QUALITY:
+  Average Message Length: 7.0 words
+  Messages Over 30 Words: 0
+  Pronoun Errors Found: 0
+
+⏱️  TIMING ANALYSIS:
+  Average Delay: 5.6s
+  Min Delay: 2.498s
+  Max Delay: 8.769s
+  Median Delay: 5.599s
+
+🔗 AI CHAIN ANALYSIS:
+  Long AI Chains (3+ messages): 1
+  Longest Chain: 12 messages
+
+
+
+✅ No Pronoun Errors Detected!
+
+
+✓ EXPECTED OUTCOMES:
+  • AIs should escalate callouts after 45s
+  • Multiple direct questions to user
+  • Eventually AIs focus on each other if user remains silent
+
+======================================================================
+🎮 RUNNING SIMULATION: Chatty User (Responds Too Much)
+======================================================================
+
+🎬 Conversation Started...
+
+[0.0s] President: "Identify the human. You have minutes to decide."
+[8.4s] Wario: "So Scan, are YOU gonna say something?"
+[15.8s] Domis: "So Scan, are YOU gonna say something?"
+[22.4s] Scan: "Wario, YOU've been suspicious this whole time"
+[32.1s] Wario: "So Domis, are YOU gonna say something?"
+[37.6s] Domis: "So Wario, are YOU gonna say something?"
+[43.2s] Scan: "So Chris, are YOU gonna say something?"
+[52.6s] Wario: "Someone here is definitely a bot."
+[59.2s] Domis: "Scan, what do YOU think about this?"
+[64.5s] Scan: "So Domis, are YOU gonna say something?"
+
+🏁 Conversation Ended
+
+
+╔═══════════════════════════════════════════════════════════╗
+║           CONVERSATION ANALYSIS REPORT                      ║
+╚═══════════════════════════════════════════════════════════╝
+
+📊 MESSAGE STATISTICS:
+  Total Messages: 9
+  User Messages: 0 (0.0%)
+  AI Messages: 9 (100.0%)
+
+❓ ENGAGEMENT METRICS:
+  Questions Asked: 7
+  User Directly Questioned: 7 times
+  User Engagement Rate: 0.0%
+
+📝 MESSAGE QUALITY:
+  Average Message Length: 6.9 words
+  Messages Over 30 Words: 0
+  Pronoun Errors Found: 0
+
+⏱️  TIMING ANALYSIS:
+  Average Delay: 7.2s
+  Min Delay: 5.318s
+  Max Delay: 9.666s
+  Median Delay: 6.613s
+
+🔗 AI CHAIN ANALYSIS:
+  Long AI Chains (3+ messages): 1
+  Longest Chain: 10 messages
+
+
+
+✅ No Pronoun Errors Detected!
+
+
+✓ EXPECTED OUTCOMES:
+  • User gets multiple turns
+  • Conversation balanced
+  • AIs interrogate user frequently
+
+======================================================================
+🎮 RUNNING SIMULATION: Normal User (Responds Sometimes)
+======================================================================
+
+🎬 Conversation Started...
+
+[0.0s] President: "Identify the human. You have minutes to decide."
+[6.8s] Wario: "Domis, YOU've been suspicious this whole time"
+[11.5s] Domis: "Wario, YOU've been suspicious this whole time"
+[17.8s] Scan: "Chris, what do YOU think about this?"
+[23.8s] Wario: "So Domis, are YOU gonna say something?"
+[30.6s] Domis: "I think we need to vote soon."
+[37.4s] Scan: "I think we need to vote soon."
+[41.2s] Wario: "Someone here is definitely a bot."
+[44.5s] Domis: "I think we need to vote soon."
+[51.9s] Scan: "This is insane. We're all gonna die."
+[58.1s] Wario: "Domis, YOU've been suspicious this whole time"
+[67.0s] Domis: "Someone here is definitely a bot."
+
+🏁 Conversation Ended
+
+
+╔═══════════════════════════════════════════════════════════╗
+║           CONVERSATION ANALYSIS REPORT                      ║
+╚═══════════════════════════════════════════════════════════╝
+
+📊 MESSAGE STATISTICS:
+  Total Messages: 11
+  User Messages: 0 (0.0%)
+  AI Messages: 11 (100.0%)
+
+❓ ENGAGEMENT METRICS:
+  Questions Asked: 2
+  User Directly Questioned: 2 times
+  User Engagement Rate: 0.0%
+
+📝 MESSAGE QUALITY:
+  Average Message Length: 6.8 words
+  Messages Over 30 Words: 0
+  Pronoun Errors Found: 0
+
+⏱️  TIMING ANALYSIS:
+  Average Delay: 6.1s
+  Min Delay: 3.321s
+  Max Delay: 8.925s
+  Median Delay: 6.365s
+
+🔗 AI CHAIN ANALYSIS:
+  Long AI Chains (3+ messages): 1
+  Longest Chain: 12 messages
+
+
+
+✅ No Pronoun Errors Detected!
+
+
+✓ EXPECTED OUTCOMES:
+  • Natural back-and-forth
+  • User engaged but not dominating
+  • Mix of AI-to-AI and AI-to-User dialogue
+
+======================================================================
+🎮 RUNNING SIMULATION: Evasive User (Short, Unhelpful Answers)
+======================================================================
+
+🎬 Conversation Started...
+
+[0.0s] President: "Identify the human. You have minutes to decide."
+[8.2s] Wario: "I think we need to vote soon."
+[11.6s] Domis: "This is insane. We're all gonna die."
+[18.3s] Scan: "So Chris, are YOU gonna say something?"
+[23.1s] Chris: "maybe"
+[27.6s] Domis: "I think we need to vote soon."
+[32.0s] Scan: "So Domis, are YOU gonna say something?"
+[35.8s] Wario: "Scan, YOU've been suspicious this whole time"
+[41.4s] Domis: "This is insane. We're all gonna die."
+[47.7s] Scan: "So Chris, are YOU gonna say something?"
+[51.7s] Chris: "I guess"
+[58.0s] Domis: "Chris, what do YOU think about this?"
+[61.3s] Chris: "maybe"
+
+🏁 Conversation Ended
+
+
+╔═══════════════════════════════════════════════════════════╗
+║           CONVERSATION ANALYSIS REPORT                      ║
+╚═══════════════════════════════════════════════════════════╝
+
+📊 MESSAGE STATISTICS:
+  Total Messages: 12
+  User Messages: 3 (25.0%)
+  AI Messages: 9 (75.0%)
+
+❓ ENGAGEMENT METRICS:
+  Questions Asked: 4
+  User Directly Questioned: 4 times
+  User Engagement Rate: 75.0%
+
+📝 MESSAGE QUALITY:
+  Average Message Length: 5.6 words
+  Messages Over 30 Words: 0
+  Pronoun Errors Found: 0
+
+⏱️  TIMING ANALYSIS:
+  Average Delay: 5.1s
+  Min Delay: 3.262s
+  Max Delay: 8.227s
+  Median Delay: 4.6585s
+
+🔗 AI CHAIN ANALYSIS:
+  Long AI Chains (3+ messages): 2
+  Longest Chain: 5 messages
+
+
+
+✅ No Pronoun Errors Detected!
+
+
+✓ EXPECTED OUTCOMES:
+  • AIs should become more suspicious
+  • More aggressive questioning
+  • Accusations of being a bot
+
+✅ All simulations complete!
+

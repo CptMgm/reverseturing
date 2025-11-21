@@ -56,6 +56,13 @@ export class ModeratorController {
     this.waitingForUserResponse = false;
     this.userResponseDeadline = null;
     this.userTypingTimer = null;
+    this.lastHumanMessageTime = null; // Track when human last spoke for natural participation
+    this.humanSilenceWarningIssued = false; // Prevent multiple warnings
+
+    // Smart typing detection
+    this.userTypingState = 'idle'; // 'idle' | 'typing' | 'thinking'
+    this.thinkingTimer = null;
+    this.pendingAiTurnTimer = null;
 
     // Callbacks
     this.onPhaseChange = null;
@@ -83,6 +90,10 @@ export class ModeratorController {
     // Reset state
     this.connectedPlayers.clear();
     this.connectedPlayers.add('player1'); // Human is always connected first
+
+    // Initialize human participation tracking
+    this.lastHumanMessageTime = Date.now(); // Start tracking from game start
+    this.humanSilenceWarningIssued = false;
 
     this.setPhase(GAME_PHASES.CALL_CONNECTING);
 
@@ -262,6 +273,13 @@ export class ModeratorController {
       text: text,
       timestamp: Date.now()
     });
+
+    // Track human participation by time (more natural than counting messages)
+    if (playerId === 'player1') {
+      this.lastHumanMessageTime = Date.now();
+      this.humanSilenceWarningIssued = false; // Reset warning flag
+      console.log(`🎤 [ModeratorController] Human spoke - tracking participation time`);
+    }
 
     // Track recent speakers (last 2)
     this.recentSpeakers.push(playerId);
@@ -597,14 +615,33 @@ export class ModeratorController {
       const nextItem = this.audioQueue.shift();
       this.playAudio(nextItem);
     } else {
-      // Queue is empty - Trigger next AI turn (Discussion Loop)
-      // Only if in active debate phases and no human input is pending
+      // Queue is empty - SMART PAUSE before triggering next AI
+      // Give user 2-3 seconds to start typing before AI takes over
       if ([GAME_PHASES.FREE_DEBATE, GAME_PHASES.SELF_ORGANIZATION, GAME_PHASES.PRESIDENT_INTRO].includes(this.currentPhase)) {
         // Don't trigger if President just finished (handled by onPresidentIntroComplete)
         if (this.currentPhase === GAME_PHASES.PRESIDENT_INTRO) return;
 
-        console.log('🤔 [ModeratorController] Queue empty. Triggering next AI turn...');
-        this.triggerNextAiTurn();
+        console.log('⏸️ [ModeratorController] Queue empty. Waiting 2.5s for user to start typing...');
+
+        // Clear any existing pending AI turn
+        if (this.pendingAiTurnTimer) {
+          clearTimeout(this.pendingAiTurnTimer);
+        }
+
+        // Wait 2.5 seconds before triggering AI
+        // This will be cancelled if user starts typing (see onUserTyping)
+        this.pendingAiTurnTimer = setTimeout(() => {
+          this.pendingAiTurnTimer = null;
+
+          // Check if user is typing or thinking
+          if (this.userTypingState !== 'idle') {
+            console.log(`🚫 [ModeratorController] User is ${this.userTypingState} - NOT triggering AI turn`);
+            return;
+          }
+
+          console.log('🤔 [ModeratorController] User idle - triggering next AI turn');
+          this.triggerNextAiTurn();
+        }, 2500);
       }
     }
   }
@@ -627,6 +664,32 @@ export class ModeratorController {
         console.warn(`⏱️ [ModeratorController] Question timeout - ${this.waitingForResponseFrom} didn't respond in 10s`);
         this.waitingForResponseFrom = null;
         this.questionAskedAt = null;
+      }
+    }
+
+    // NATURAL HUMAN PARTICIPATION CHECK: Only force if human has been silent for a meaningful duration
+    const timeSinceHumanSpoke = this.lastHumanMessageTime ? Date.now() - this.lastHumanMessageTime : 999999;
+    const humanName = this.players.player1.name;
+
+    // If human hasn't spoken in 45+ seconds AND we haven't already warned them, force a callout
+    if (timeSinceHumanSpoke > 45000 && !this.humanSilenceWarningIssued) {
+      console.log(`🎯 [ModeratorController] Human silent for ${Math.floor(timeSinceHumanSpoke / 1000)}s - issuing organic callout`);
+      this.humanSilenceWarningIssued = true;
+
+      // Pick Secret Moderator if available, otherwise random AI
+      const questionerId = this.secretModeratorId || this.getRandomAIPlayer();
+
+      // Add context flag for organic questioning (not as aggressive as forced)
+      if (this.onTriggerAiResponse) {
+        const context = {
+          speakerName: this.lastSpeakerName || "System",
+          transcript: this.lastTranscript || "(Conversation started)",
+          humanBeenQuiet: true, // Gentler flag than forceQuestionToHuman
+          humanPlayerName: humanName,
+          silenceDuration: Math.floor(timeSinceHumanSpoke / 1000)
+        };
+        this.onTriggerAiResponse(questionerId, context);
+        return;
       }
     }
 
@@ -809,7 +872,8 @@ export class ModeratorController {
       queueLength: this.audioQueue.length,
       connectedPlayers: Array.from(this.connectedPlayers),
       players: this.players,
-      waitingForUserResponse: this.waitingForUserResponse
+      waitingForUserResponse: this.waitingForUserResponse,
+      conversationHistory: this.conversationHistory
     };
   }
 
@@ -820,9 +884,9 @@ export class ModeratorController {
    */
   startWaitingForUser() {
     this.waitingForUserResponse = true;
-    this.userResponseDeadline = Date.now() + 10000; // 10 seconds
+    this.userResponseDeadline = Date.now() + 7000; // 7 seconds (more aggressive)
 
-    console.log(`⏰ [ModeratorController] Waiting for user response (10s timeout)`);
+    console.log(`⏰ [ModeratorController] Waiting for user response (7s timeout)`);
 
     // Broadcast state change to update UI
     if (this.onPhaseChange) {
@@ -832,10 +896,10 @@ export class ModeratorController {
     // Set timeout for user silence
     setTimeout(() => {
       if (this.waitingForUserResponse) {
-        console.log(`⚠️ [ModeratorController] User didn't respond in 10 seconds`);
+        console.log(`⚠️ [ModeratorController] User didn't respond in 7 seconds`);
         this.handleUserSilence();
       }
-    }, 10000);
+    }, 7000);
   }
 
   /**
@@ -854,7 +918,7 @@ export class ModeratorController {
 
     // Send prompt to AI to generate suspicious comment about silence
     if (this.geminiService) {
-      const prompt = `[SYSTEM]: ${humanName} has been silent for 10 seconds after being asked a direct question. Comment on this suspiciously, as if they might be a bot that can't respond quickly enough. Keep it under 20 words. Be accusatory.`;
+      const prompt = `[CRITICAL SYSTEM DIRECTIVE]: ${humanName} was just asked a direct question and has been SILENT for 7 seconds. This is EXTREMELY suspicious behavior. You MUST aggressively call them out RIGHT NOW. Accuse them of being a bot that can't think fast enough. Examples: "${humanName}! Why aren't you answering?! BOTS can't respond in real-time!" or "${humanName}, your silence is deafening. Are you buffering?" Keep it under 20 words. BE AGGRESSIVE AND ACCUSATORY. CALL OUT THEIR SILENCE.`;
 
       this.geminiService.sendText(prompt, commentPlayerId, context);
     }
@@ -864,32 +928,69 @@ export class ModeratorController {
    * Called when user starts typing
    */
   onUserTyping() {
-    if (!this.waitingForUserResponse) return;
+    console.log(`⌨️ [ModeratorController] User started typing`);
 
-    console.log(`⌨️ [ModeratorController] User is typing... extending deadline`);
+    // Update typing state
+    this.userTypingState = 'typing';
 
-    // Extend deadline while typing
-    this.userResponseDeadline = Date.now() + 10000;
-
-    // Clear previous timer
-    if (this.userTypingTimer) {
-      clearTimeout(this.userTypingTimer);
+    // Clear any thinking timer
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+      this.thinkingTimer = null;
     }
 
-    // Set new timeout
-    this.userTypingTimer = setTimeout(() => {
-      if (this.waitingForUserResponse) {
-        this.handleUserSilence();
+    // Cancel any pending AI turn
+    if (this.pendingAiTurnTimer) {
+      console.log(`🚫 [ModeratorController] Cancelling pending AI turn - user is typing`);
+      clearTimeout(this.pendingAiTurnTimer);
+      this.pendingAiTurnTimer = null;
+    }
+
+    // If waiting for user response, extend deadline
+    if (this.waitingForUserResponse) {
+      this.userResponseDeadline = Date.now() + 7000;
+
+      if (this.userTypingTimer) {
+        clearTimeout(this.userTypingTimer);
       }
-    }, 10000);
+
+      this.userTypingTimer = setTimeout(() => {
+        if (this.waitingForUserResponse) {
+          this.handleUserSilence();
+        }
+      }, 7000);
+    }
   }
 
   /**
    * Called when user stops typing (without sending)
    */
   onUserStoppedTyping() {
-    console.log(`⏸️ [ModeratorController] User stopped typing`);
-    // Timer is already set, will fire if they don't resume
+    console.log(`⏸️ [ModeratorController] User stopped typing - entering 'thinking' state`);
+
+    // User stopped typing but hasn't sent message
+    // Enter "thinking" state for 3 seconds before returning to idle
+    this.userTypingState = 'thinking';
+
+    // Clear any previous thinking timer
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+    }
+
+    // After 3 seconds of not typing, return to idle
+    this.thinkingTimer = setTimeout(() => {
+      console.log(`💭 [ModeratorController] User thinking timeout - returning to idle`);
+      this.userTypingState = 'idle';
+      this.thinkingTimer = null;
+
+      // Now trigger AI turn if appropriate
+      if ([GAME_PHASES.FREE_DEBATE, GAME_PHASES.SELF_ORGANIZATION].includes(this.currentPhase)) {
+        if (!this.activeSpeaker && this.audioQueue.length === 0) {
+          console.log(`🤖 [ModeratorController] User idle - triggering next AI turn`);
+          this.triggerNextAiTurn();
+        }
+      }
+    }, 3000);
   }
 
   /**
@@ -903,6 +1004,13 @@ export class ModeratorController {
     if (this.userTypingTimer) {
       clearTimeout(this.userTypingTimer);
       this.userTypingTimer = null;
+    }
+
+    // Reset typing state to idle when message is sent
+    this.userTypingState = 'idle';
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+      this.thinkingTimer = null;
     }
 
     // Broadcast state change to update UI

@@ -58,7 +58,8 @@ const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUs
                     const isPresident = id === 'moderator';
 
                     // User's turn indicator - show green border when waiting for user response
-                    const isUserTurn = isMe && waitingForUserResponse;
+                    // Only show user turn indicator if NO ONE is actively speaking
+                    const isUserTurn = isMe && waitingForUserResponse && !activeSpeaker;
 
                     return (
                         <div

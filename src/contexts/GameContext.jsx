@@ -119,52 +119,68 @@ export const GameProvider = ({ children }) => {
       // Update active speaker in UI
       setGameState(prev => ({ ...prev, activeSpeaker: item.playerId }));
 
-      if (item.audioData) {
+      console.log(`🔍 [Client] Audio data present: ${!!item.audioData}, Length: ${item.audioData?.length || 0}`);
+
+      if (item.audioData && item.audioData.length > 100) { // Basic validation
         // Play server-provided audio with phone call effect
         // Use audio/mpeg for MP3 data from ElevenLabs
         const audio = new Audio(`data:audio/mpeg;base64,${item.audioData}`);
+        audio.volume = 1.0; // Max volume
 
+        // Wait for audio to load before playing
+        audio.addEventListener('loadedmetadata', () => {
+          console.log(`📊 [Client] Audio loaded - Duration: ${audio.duration}s, Volume: ${audio.volume}`);
+        });
+
+        // TEMPORARILY DISABLE PHONE EFFECT TO DEBUG
         let audioContext = null;
+        const ENABLE_PHONE_EFFECT = false; // Set to true to re-enable
 
-        try {
-          // Create Web Audio API context for phone call effect
-          audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const source = audioContext.createMediaElementSource(audio);
+        if (ENABLE_PHONE_EFFECT) {
+          try {
+            // Create Web Audio API context for phone call effect
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioContext.createMediaElementSource(audio);
 
-          // Create bandpass filter for phone call effect (300Hz - 3400Hz)
-          const lowpass = audioContext.createBiquadFilter();
-          lowpass.type = 'lowpass';
-          lowpass.frequency.value = 3400; // Cut off high frequencies
+            // Create bandpass filter for phone call effect (300Hz - 3400Hz)
+            const lowpass = audioContext.createBiquadFilter();
+            lowpass.type = 'lowpass';
+            lowpass.frequency.value = 3400; // Cut off high frequencies
 
-          const highpass = audioContext.createBiquadFilter();
-          highpass.type = 'highpass';
-          highpass.frequency.value = 300; // Cut off low frequencies
+            const highpass = audioContext.createBiquadFilter();
+            highpass.type = 'highpass';
+            highpass.frequency.value = 300; // Cut off low frequencies
 
-          // Add slight distortion for realism
-          const compressor = audioContext.createDynamicsCompressor();
-          compressor.threshold.value = -20;
-          compressor.knee.value = 10;
-          compressor.ratio.value = 4;
+            // Add slight distortion for realism
+            const compressor = audioContext.createDynamicsCompressor();
+            compressor.threshold.value = -20;
+            compressor.knee.value = 10;
+            compressor.ratio.value = 4;
 
-          // Connect the audio chain
-          source.connect(highpass);
-          highpass.connect(lowpass);
-          lowpass.connect(compressor);
-          compressor.connect(audioContext.destination);
+            // Connect the audio chain
+            source.connect(highpass);
+            highpass.connect(lowpass);
+            lowpass.connect(compressor);
+            compressor.connect(audioContext.destination);
 
-          console.log(`🎧 [Client] Phone effect applied for ${item.playerId}`);
-        } catch (audioError) {
-          console.warn(`⚠️ [Client] Could not apply phone effect, using raw audio:`, audioError);
-          // If Web Audio API fails, audio will still play without effect
+            console.log(`🎧 [Client] Phone effect applied for ${item.playerId}`);
+          } catch (audioError) {
+            console.warn(`⚠️ [Client] Could not apply phone effect, using raw audio:`, audioError);
+            // If Web Audio API fails, audio will still play without effect
+          }
+        } else {
+          console.log(`🎵 [Client] Playing audio WITHOUT phone effect for ${item.playerId}`);
         }
 
         // Handle playback errors (e.g. Autoplay blocked)
         try {
-          console.log(`▶️ [Client] Playing audio for ${item.playerId}`);
+          console.log(`▶️ [Client] Playing audio for ${item.playerId} (duration: ${audio.duration || 'unknown'}s)`);
           await audio.play();
+          console.log(`✅ [Client] Audio started playing for ${item.playerId}`);
         } catch (playError) {
-          console.error('❌ Playback failed (Autoplay blocked?):', playError);
-          setSystemError(`Audio Autoplay Blocked. Please interact with the page.`);
+          console.error('❌ Playback failed:', playError);
+          console.error('Audio src length:', item.audioData?.length);
+          setSystemError(`Audio Playback Error: ${playError.message}`);
 
           // Even if playback fails, we MUST finish the item so the game proceeds
           if (audioContext) audioContext.close();
@@ -276,6 +292,10 @@ export const GameProvider = ({ children }) => {
     modeSelectedRef.current = true;
     setCommunicationMode(mode);
     setShowModeSelection(false);
+
+    // Unlock audio context on user interaction (critical for autoplay)
+    const unlockAudio = new Audio();
+    unlockAudio.play().catch(e => console.log('Audio unlock attempt:', e));
 
     // Send mode to server
     if (wsRef.current && isConnected) {

@@ -233,6 +233,18 @@ wss.on('connection', (ws) => {
           break;
 
         case 'HUMAN_INPUT':
+          // Ignore human input during PRESIDENT_INTRO (wait for President to finish)
+          if (moderatorController.currentPhase === 'PRESIDENT_INTRO') {
+            console.log(`⏸️ [Server] Ignoring human input during President intro`);
+            // Still add to history for context, but don't trigger AI responses
+            const humanName2 = moderatorController.players.player1.name;
+            apiLogger.logConversation('player1', humanName2, data.payload.text);
+            moderatorController.addToConversationHistory('player1', data.payload.text);
+            // Broadcast so chat shows the message
+            broadcastGameState();
+            break;
+          }
+
           // Add human message to conversation history
           const humanName = moderatorController.players.player1.name;
 
@@ -240,6 +252,9 @@ wss.on('connection', (ws) => {
           apiLogger.logConversation('player1', humanName, data.payload.text);
 
           moderatorController.addToConversationHistory('player1', data.payload.text);
+
+          // Broadcast updated game state so chat shows the message
+          broadcastGameState();
 
           // Route message to appropriate AI
           const routing = moderatorController.routeHumanMessage(data.payload.text);
@@ -376,9 +391,19 @@ moderatorController.onAudioPlayback = async (playbackItem) => {
 };
 
 moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
-  // Random delay between 3 and 6 seconds to create "intentional pauses"
-  // This gives the human player a chance to speak.
-  const delay = Math.floor(Math.random() * 3000) + 3000;
+  // Variable delay for natural pacing:
+  // - 70% chance: 4-7s (normal thinking)
+  // - 20% chance: 7-10s (longer pause for variety)
+  // - 10% chance: 2-4s (quick reaction)
+  const rand = Math.random();
+  let delay;
+  if (rand < 0.10) {
+    delay = Math.floor(Math.random() * 2000) + 2000; // 2-4s - quick
+  } else if (rand < 0.30) {
+    delay = Math.floor(Math.random() * 3000) + 7000; // 7-10s - slow
+  } else {
+    delay = Math.floor(Math.random() * 3000) + 4000; // 4-7s - normal
+  }
 
   setTimeout(async () => {
     console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} after ${delay}ms`);
@@ -389,7 +414,18 @@ moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
     // Construct a prompt that includes the previous speaker's name and text
     // This gives the AI the necessary context to respond relevantly
     const humanName = moderatorController.players.player1.name;
-    const prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said. Stay in character. Keep it under 30 words. If ${humanName} has been quiet, maybe direct a question at them.]`;
+
+    let prompt;
+    if (context.forceQuestionToHuman) {
+      // AGGRESSIVE HUMAN TARGETING: Force AI to directly question the human
+      prompt = `[CRITICAL SYSTEM DIRECTIVE]: The AIs have been talking amongst themselves too much. ${humanName} is being TOO QUIET and suspicious. You MUST directly call out ${humanName} with an aggressive, pointed question. Make them uncomfortable. Question their humanity. Accuse them of being a bot. Examples: "${humanName}, why are you so QUIET? Are you even real?" or "${humanName}, what's your earliest childhood memory? Answer NOW!" Keep it under 25 words. BE AGGRESSIVE. END WITH A DIRECT QUESTION TO ${humanName}.`;
+    } else if (context.humanBeenQuiet) {
+      // ESCALATED CALLOUT: Human has been silent for 45+ seconds - GET AGGRESSIVE
+      const durationText = Math.floor(context.silenceDuration / 1000);
+      prompt = `[CRITICAL ALERT]: ${humanName} has been SILENT for ${durationText} seconds! This is EXTREMELY suspicious. You need to call them out AGGRESSIVELY and DIRECTLY. Accuse them of being a bot. Make them prove they're human. Examples: "${humanName}, YOU'VE BEEN SILENT THIS WHOLE TIME. That's EXACTLY what a bot would do!" or "${humanName}, prove YOU're human RIGHT NOW or we're voting for YOU!" Keep it under 25 words. BE HARSH. BE URGENT. This is life or death.`;
+    } else {
+      prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said. Stay in character. Keep it under 30 words. If ${humanName} has been quiet, maybe direct a question at them.]`;
+    }
 
     try {
       await geminiLiveService.sendText(prompt, targetPlayerId, conversationContext);
