@@ -95,7 +95,7 @@ const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUs
                             {/* Name Tag */}
                             <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1 rounded-lg backdrop-blur-sm">
                                 <span className={`font - bold ${isPresident ? 'text-red-400' : 'text-white'} `}>
-                                    {player.name} {isMe && '(You)'}
+                                    {player.name}
                                 </span>
                             </div>
 

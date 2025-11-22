@@ -24,6 +24,7 @@ export const GameProvider = ({ children }) => {
   const wsRef = useRef(null);
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
+  const currentAudioRef = useRef(null); // Store currently playing audio element
   const callObjectRef = useRef(null);
 
   useEffect(() => {
@@ -62,6 +63,19 @@ export const GameProvider = ({ children }) => {
             queueAudio(data.payload);
             break;
 
+          case 'AUDIO_INTERRUPT':
+            console.log('⏸️ Interrupting current audio playback');
+            // Stop current audio and clear queue
+            if (currentAudioRef.current) {
+              currentAudioRef.current.pause();
+              currentAudioRef.current.currentTime = 0;
+              currentAudioRef.current = null;
+            }
+            audioQueueRef.current = [];
+            isPlayingRef.current = false;
+            setGameState(prev => ({ ...prev, activeSpeaker: null }));
+            break;
+
           case 'DAILY_ROOM':
             setDailyUrl(data.payload.url);
             break;
@@ -88,6 +102,42 @@ export const GameProvider = ({ children }) => {
     };
   }, []);
 
+  // Play drop-off sound when someone is eliminated
+  const previousEliminatedRef = useRef([]);
+  useEffect(() => {
+    const currentEliminated = gameState.eliminatedPlayers || [];
+    const previousEliminated = previousEliminatedRef.current;
+
+    // Check if a new player was eliminated
+    if (currentEliminated.length > previousEliminated.length) {
+      console.log('💀 Player eliminated - playing drop-off sound');
+      // Play call drop-off sound (similar to Zoom/Skype disconnect)
+      const dropSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
+      dropSound.volume = 0.6;
+      dropSound.play().catch(e => console.log('Drop sound failed:', e));
+    }
+
+    previousEliminatedRef.current = currentEliminated;
+  }, [gameState.eliminatedPlayers]);
+
+  // Play buzzer sound when round timer expires
+  const previousPhaseRef = useRef(null);
+  useEffect(() => {
+    const currentPhase = gameState.phase;
+    const previousPhase = previousPhaseRef.current;
+
+    // Check if we transitioned from a ROUND to an ELIMINATION phase
+    if (previousPhase && previousPhase.startsWith('ROUND_') && currentPhase.startsWith('ELIMINATION_')) {
+      console.log('⏰ Round ended - playing buzzer sound');
+      // Play alarm/buzzer sound (round time up)
+      const buzzerSound = new Audio('https://assets.mixkit.co/active_storage/sfx/1786/1786-preview.mp3');
+      buzzerSound.volume = 0.5;
+      buzzerSound.play().catch(e => console.log('Buzzer sound failed:', e));
+    }
+
+    previousPhaseRef.current = currentPhase;
+  }, [gameState.phase]);
+
   // Audio Playback Queue
   const queueAudio = (payload) => {
     console.log('🔊 Queuing audio from:', payload.playerId);
@@ -95,8 +145,23 @@ export const GameProvider = ({ children }) => {
     processAudioQueue();
   };
 
+  // Persistent AudioContext to avoid autoplay blocks
+  const audioContextRef = useRef(null);
+
+  const getAudioContext = () => {
+    if (!audioContextRef.current) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioContextRef.current = new AudioContext();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+    return audioContextRef.current;
+  };
+
   const startGame = (playerName) => {
     // Unlock audio context on user interaction
+    getAudioContext();
     const unlockAudio = new Audio();
     unlockAudio.play().catch(e => console.log('Audio unlock attempt:', e));
 
@@ -133,13 +198,12 @@ export const GameProvider = ({ children }) => {
         });
 
         // TEMPORARILY DISABLE PHONE EFFECT TO DEBUG
-        let audioContext = null;
-        const ENABLE_PHONE_EFFECT = false; // Set to true to re-enable
+        const ENABLE_PHONE_EFFECT = true; // Enabled for all AI players
 
         if (ENABLE_PHONE_EFFECT) {
           try {
-            // Create Web Audio API context for phone call effect
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // Use persistent AudioContext
+            const audioContext = getAudioContext();
             const source = audioContext.createMediaElementSource(audio);
 
             // Create bandpass filter for phone call effect (300Hz - 3400Hz)
@@ -164,6 +228,15 @@ export const GameProvider = ({ children }) => {
             compressor.connect(audioContext.destination);
 
             console.log(`🎧 [Client] Phone effect applied for ${item.playerId}`);
+
+            // Clean up nodes when audio ends
+            audio.addEventListener('ended', () => {
+              source.disconnect();
+              highpass.disconnect();
+              lowpass.disconnect();
+              compressor.disconnect();
+            });
+
           } catch (audioError) {
             console.warn(`⚠️ [Client] Could not apply phone effect, using raw audio:`, audioError);
             // If Web Audio API fails, audio will still play without effect
@@ -176,6 +249,7 @@ export const GameProvider = ({ children }) => {
         try {
           console.log(`▶️ [Client] Playing audio for ${item.playerId} (duration: ${audio.duration || 'unknown'}s)`);
           await audio.play();
+          currentAudioRef.current = audio; // Store reference to current audio
           console.log(`✅ [Client] Audio started playing for ${item.playerId}`);
         } catch (playError) {
           console.error('❌ Playback failed:', playError);
@@ -183,7 +257,6 @@ export const GameProvider = ({ children }) => {
           setSystemError(`Audio Playback Error: ${playError.message}`);
 
           // Even if playback fails, we MUST finish the item so the game proceeds
-          if (audioContext) audioContext.close();
           setTimeout(() => {
             finishAudio(item.playerId);
           }, 2000);
@@ -192,9 +265,7 @@ export const GameProvider = ({ children }) => {
 
         audio.onended = () => {
           console.log(`⏹️ [Client] Audio ended for ${item.playerId}`);
-          if (audioContext) {
-            audioContext.close(); // Clean up audio context
-          }
+          currentAudioRef.current = null; // Clear reference
           finishAudio(item.playerId);
         };
 
@@ -203,7 +274,6 @@ export const GameProvider = ({ children }) => {
         setTimeout(() => {
           if (isPlayingRef.current && gameState.activeSpeaker === item.playerId) {
             console.warn('⚠️ Audio safety timeout triggered');
-            if (audioContext) audioContext.close();
             finishAudio(item.playerId);
           }
         }, 30000);
@@ -211,7 +281,6 @@ export const GameProvider = ({ children }) => {
         // Fallback if onended doesn't fire for some reason
         audio.onerror = (e) => {
           console.error('Audio element error:', e);
-          if (audioContext) audioContext.close();
           finishAudio(item.playerId);
         };
 
@@ -294,6 +363,7 @@ export const GameProvider = ({ children }) => {
     setShowModeSelection(false);
 
     // Unlock audio context on user interaction (critical for autoplay)
+    getAudioContext();
     const unlockAudio = new Audio();
     unlockAudio.play().catch(e => console.log('Audio unlock attempt:', e));
 

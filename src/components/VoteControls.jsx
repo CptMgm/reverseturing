@@ -2,27 +2,34 @@ import React from 'react';
 import { useGame } from '../contexts/GameContext';
 
 const VoteControls = () => {
-    const { gameState, callPresident, castVote } = useGame();
-    const { votes, players, consensus, activeSpeaker } = gameState;
+    const { gameState, castVote } = useGame();
+    const { votes, players, phase } = gameState;
 
-    // Calculate vote counts
-    const voteCounts = {};
-    Object.values(votes).forEach(votedFor => {
-        if (votedFor) {
-            voteCounts[votedFor] = (voteCounts[votedFor] || 0) + 1;
-        }
-    });
+    // Only show controls during elimination phases (not during President Verdict)
+    if (!phase.startsWith('ELIMINATION')) return null;
 
     const myVote = votes['player1'];
+    const isElimination = phase.startsWith('ELIMINATION');
 
     return (
-        <div className="flex flex-col gap-4 px-4">
+        <div className="flex flex-col gap-3 px-2 sm:px-4 py-2 w-full">
             {/* Voting Buttons Panel */}
-            <div className="flex items-center justify-between bg-gray-900/50 p-3 rounded-xl border border-gray-700">
-                <span className="text-gray-400 font-mono text-sm mr-4">CAST YOUR VOTE:</span>
-                <div className="flex gap-2">
+            <div className="flex flex-col bg-black/60 backdrop-blur-xl p-4 rounded-xl border border-pink-500/30 shadow-[0_0_30px_rgba(236,72,153,0.3)] gap-4">
+                <div className="flex flex-col text-center">
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 font-bold font-mono text-lg animate-pulse">
+                        ⚠️ ELIMINATION PROTOCOL
+                    </span>
+                    <span className="text-gray-400 text-xs uppercase tracking-wider mt-1">
+                        Vote to eliminate a bot
+                    </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
                     {Object.entries(players).map(([id, player]) => {
-                        if (id === 'player1') return null; // Can't vote for self
+                        if (id === 'player1' || id === 'moderator') return null; // Can't vote for self or moderator
+
+                        // Don't show eliminated players
+                        if (gameState.eliminatedPlayers?.includes(id)) return null;
 
                         const isVoted = myVote === id;
 
@@ -30,50 +37,37 @@ const VoteControls = () => {
                             <button
                                 key={id}
                                 onClick={() => castVote(id)}
-                                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${isVoted
-                                        ? 'bg-red-600 text-white shadow-[0_0_10px_rgba(220,38,38,0.5)]'
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
+                                className={`px-4 py-3 rounded-lg font-bold text-sm transition-all transform hover:scale-105 ${isVoted
+                                    ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-[0_0_20px_rgba(236,72,153,0.8)] border-2 border-pink-400'
+                                    : 'bg-slate-900/80 text-gray-300 hover:bg-gradient-to-r hover:from-pink-900/50 hover:to-purple-900/50 hover:text-white border-2 border-purple-500/30 hover:border-pink-500/50 hover:shadow-[0_0_15px_rgba(236,72,153,0.4)]'
                                     }`}
                             >
-                                {isVoted ? 'VOTED: ' : 'VOTE '} {player.name}
+                                {isVoted ? '✓ ' : ''}{player.name.split(' ')[0]}
                             </button>
                         );
                     })}
                 </div>
             </div>
 
-            <div className="flex items-center justify-between">
-                <div className="flex gap-4">
-                    {/* Vote Status Indicators */}
-                    {Object.entries(players).map(([id, player]) => {
-                        if (id === 'player1') return null;
+            {/* Vote Status Indicators */}
+            <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
+                {Object.entries(players).map(([id, player]) => {
+                    if (id === 'player1' || id === 'moderator') return null;
+                    if (gameState.eliminatedPlayers?.includes(id)) return null;
 
-                        const votedForId = votes[id];
-                        const votedForName = votedForId ? players[votedForId]?.name : '???';
+                    const votedForId = votes[id];
+                    const hasVoted = !!votedForId;
 
-                        return (
-                            <div key={id} className="flex items-center gap-2 text-sm text-gray-400 bg-gray-900/50 px-3 py-1.5 rounded-lg">
-                                <span className="font-bold text-gray-300">{player.name}</span>
-                                <span>voted for</span>
-                                <span className={`font-bold ${votedForId ? 'text-red-400' : 'text-gray-600'}`}>
-                                    {votedForId ? votedForName : '...'}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
-
-                {/* Call President Button */}
-                <button
-                    onClick={callPresident}
-                    disabled={!consensus}
-                    className={`px-6 py-2 rounded-lg font-bold transition-all ${consensus
-                            ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.5)]'
-                            : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                        }`}
-                >
-                    {consensus ? '📞 CALL PRESIDENT' : 'WAITING FOR CONSENSUS...'}
-                </button>
+                    return (
+                        <div key={id} className={`flex items-center gap-1.5 sm:gap-2 text-xs px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border backdrop-blur-sm ${hasVoted
+                            ? 'bg-cyan-900/30 border-cyan-500/50 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
+                            : 'bg-slate-900/50 border-purple-500/30 text-gray-400'}`}>
+                            <span className="font-bold">{player.name.split(' ')[0]}</span>
+                            <span className="hidden sm:inline">{hasVoted ? '✓ voted' : '• thinking...'}</span>
+                            <span className="sm:hidden">{hasVoted ? '✓' : '•'}</span>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );

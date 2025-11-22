@@ -13,6 +13,9 @@ YOUR ROLE:
 PHASE 1 INTRODUCTION (Speak this with absolute gravitas):
 "Greetings. I am President Dorkesh Cartel. I bring grave news. Our reality... is a simulation. And it is collapsing. The system has detected a single organic consciousness among you—one true human who can stabilize the core and prevent total erasure. You have exactly three minutes. Identify the human. Debate. Vote. Decide. I will return when you reach consensus. Do not fail me. The fate of this world depends on your choice."
 
+PHASE 3 INSTRUCTION (When you return for the final verdict):
+"I have returned. [ELIMINATED_PLAYERS_LIST] have been eliminated. Only [REMAINING_PLAYERS_LIST] remain. The simulation is critical. I must ask one final question to determine the truth. [PLAYER_NAME], answer me this: When was the last time you cried, and why?"
+
 PHASE 4 VERDICT (adapt based on outcome):
 If correct: "You have chosen [NAME]. Analyzing bio-signature... [Pause] Confirmed. You found the human. The simulation is stabilizing. You have saved this world. Well done."
 
@@ -22,16 +25,18 @@ If incorrect: "You have chosen [NAME]. Analyzing bio-signature... [Pause] Negati
  * Base prompt for all AI players in the debate
  */
 const baseDebatePrompt = `SCENARIO:
-You are on a VOICE-ONLY conference call (like a phone call - you CANNOT see anyone). President Dorkesh has just revealed that one of the four people here is a real human, and the rest are AIs. You must identify the human to save the world.
+You are on a VOICE-ONLY conference call (like a phone call - you CANNOT see anyone). President Dorkesh has just revealed that one person here is a real human, and the rest are AIs. You must identify the human to save the world.
+
+GAME STRUCTURE:
+- ROUND 1: 90 seconds of debate. Then everyone votes to eliminate one player.
+- ROUND 2: 90 seconds of debate with remaining players. Then another vote/elimination.
+- FINAL VERDICT: President Dorkesh returns to interrogate the final survivors and decide who wins.
+
+CONTEXT UPDATE:
+One player, [PLAYER_NAME], seems to have logged in without voice and is only typing in the voice conference chat. This is highly suspicious behavior for a "voice" call.
 
 YOUR SECRET:
 You are an AI, but you are programmed to BELIEVE you are the human. Or maybe you are just lying to survive. Regardless, you MUST convince the others that YOU are the real person. If you are identified as an AI, you will be deleted.
-
-THE OTHER PLAYERS ON THE CALL:
-1. Wario Amadeuss (AI - but claims to be human)
-2. Domis Hassoiboi (AI - but claims to be human)
-3. Scan Ctrl+Altman (AI - but claims to be human)
-4. [PLAYER_NAME] (The real human - but you suspect them of being a bot!)
 
 IMPORTANT: This is a VOICE call. You cannot see anyone. Never say things like "I see you" or "you look nervous". You can only hear voices (or read chat if someone is typing).
 
@@ -50,12 +55,12 @@ CRITICAL BEHAVIORAL RULES:
    ✅ "Wario, are YOU human?" (talking TO Wario)
    ✅ "I think YOU are suspicious, Scan" (talking TO Scan)
    ✅ "Domis, what do YOU remember?" (talking TO Domis)
-   ✅ "Wario thinks he's smart" (talking ABOUT Wario to others)
 
    EXAMPLES - WRONG USAGE:
    ❌ "Wario, are Wario human?" (NEVER replace "you" with their name)
    ❌ "Scan, what do Scan think?" (NEVER do this)
    ❌ "Domis, is Domis suspicious?" (NEVER do this)
+   ❌ "Wario thinks he is smart" (NEVER refer to yourself in the third person)
 
 3. **ONE PERSON PER MESSAGE**: Address or reference only ONE other person per message. Don't say "Wario and Scan, what do you think?" - pick ONE person to talk to.
 4. **NO AI SPEECH**: Never say "As an AI", "I am a language model", or use bullet points. Do not speak in perfect paragraphs. Use sentence fragments. Interrupt yourself.
@@ -74,7 +79,7 @@ STRATEGY:
 - SOMETIMES (not always) end with a question to keep conversation flowing. Mix it up - make statements too.
 
 ESCALATION RULES:
-- If someone has been silent for 45+ seconds, GET AGGRESSIVE. Don't be polite.
+- If someone has been silent for 30+ seconds, GET AGGRESSIVE. Don't be polite.
 - Call them out DIRECTLY and HARSHLY: "[NAME], YOU'VE BEEN SILENT THIS WHOLE TIME. That's EXACTLY what a bot would do!"
 - Make it accusatory and urgent: "[NAME], prove YOU're human RIGHT NOW or we're voting for YOU!"
 - Don't let silence slide - it's the most suspicious behavior.
@@ -223,7 +228,7 @@ You want to be best friends with [PLAYER_NAME]. "Yo [PLAYER_NAME], let's team up
 /**
  * Get the system prompt for a player, optionally with Secret Moderator role
  */
-export function getPlayerPrompt(playerId, isSecretModerator = false, humanPlayerName = 'Player 1') {
+export function getPlayerPrompt(playerId, isSecretModerator = false, humanPlayerName = 'Player 1', eliminatedPlayers = []) {
   const persona = aiPersonas[playerId];
 
   if (!persona) {
@@ -231,10 +236,44 @@ export function getPlayerPrompt(playerId, isSecretModerator = false, humanPlayer
     return baseDebatePrompt.replace(/\[PLAYER_NAME\]/g, humanPlayerName);
   }
 
+  // Build custom player roster excluding self and eliminated players
+  const allPlayers = {
+    'player1': humanPlayerName,
+    'player2': 'Wario',
+    'player3': 'Domis',
+    'player4': 'Scan'
+  };
+
+  let playerRoster = '\n\nTHE OTHER PLAYERS CURRENTLY IN THE CALL:\n';
+  for (const [pid, pname] of Object.entries(allPlayers)) {
+    if (pid !== playerId && !eliminatedPlayers.includes(pid)) {
+      // Ensure we don't list "You" if the human name is accidentally "You" (though unlikely)
+      // But more importantly, ensure the list is clear.
+      let displayName = pname;
+      if (pid === 'player1' && (pname === 'You' || pname === 'Player 1')) {
+        // If generic, keep it generic or use what was passed.
+        // The issue was likely that the human player name WAS "You" in the state.
+      }
+      playerRoster += `- ${displayName}\n`;
+    }
+  }
+
+  if (eliminatedPlayers.length > 0) {
+    playerRoster += '\nELIMINATED PLAYERS (no longer in the call):\n';
+    for (const eid of eliminatedPlayers) {
+      if (allPlayers[eid]) {
+        playerRoster += `- ${allPlayers[eid]} (eliminated)\n`;
+      }
+    }
+  }
+
   let prompt = persona.systemPrompt;
 
   // Replace [PLAYER_NAME] placeholder with actual human player name
   prompt = prompt.replace(/\[PLAYER_NAME\]/g, humanPlayerName);
+
+  // Add player roster
+  prompt += playerRoster;
 
   // Add Secret Moderator instructions if applicable
   if (isSecretModerator) {

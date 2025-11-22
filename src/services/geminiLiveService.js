@@ -1,10 +1,12 @@
 import { WebSocket } from 'ws';
+import { getEnhancedLogger } from '../utils/enhancedLogger.js';
 
 export class GeminiLiveService {
   constructor() {
     this.sessions = new Map(); // playerId -> { history: [], name: "...", apiKey: "..." }
     this.moderatorController = null;
     this.apiLogger = null; // Will be set by server.js
+    this.enhancedLogger = getEnhancedLogger();
   }
 
   /**
@@ -57,6 +59,21 @@ export class GeminiLiveService {
     // Add user message to history
     session.history.push({ role: "user", parts: [{ text: contextualPrompt }] });
 
+    // Log AI context to enhanced logger (what the AI sees)
+    const conversationHistory = conversationContext?.recentMessages || [];
+    this.enhancedLogger.logAIContext(
+      targetPlayerId,
+      session.name,
+      contextualPrompt,
+      conversationHistory,
+      session.systemPrompt, // Pass system prompt
+      {
+        historyLength: session.history.length,
+        temperature: 0.9,
+        model: 'gemini-2.5-flash-preview-09-2025'
+      }
+    );
+
     // Log Gemini request
     if (this.apiLogger) {
       this.apiLogger.log('Gemini', 'request', targetPlayerId, {
@@ -64,14 +81,14 @@ export class GeminiLiveService {
         historyLength: session.history.length,
         temperature: 0.9,
         maxTokens: 150,
-        model: 'gemini-2.0-flash'
+        model: 'gemini-2.5-flash-preview-09-2025'
       });
     }
 
     try {
       // Call Gemini API
-      // Using gemini-2.0-flash as it is confirmed available and stable
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${session.apiKey}`;
+      // Using gemini-2.5-flash-preview for better performance
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${session.apiKey}`;
 
       const response = await fetch(url, {
         method: 'POST',
@@ -82,10 +99,10 @@ export class GeminiLiveService {
           contents: session.history,
           generationConfig: {
             response_modalities: ["TEXT"], // Explicitly request TEXT only
-            temperature: 0.9,
+            temperature: 0.5, // Lowered for more focused responses
             topK: 40,
             topP: 0.95,
-            maxOutputTokens: 150, // Keep responses concise
+            maxOutputTokens: 500, // Increased to prevent cut-offs
           }
         })
       });
@@ -97,42 +114,40 @@ export class GeminiLiveService {
 
       const data = await response.json();
 
+      // Validate API response structure
+      if (!data.candidates || !data.candidates[0]) {
+        console.error(`❌ [GeminiService] Invalid API response for ${targetPlayerId}:`, JSON.stringify(data, null, 2));
+        return;
+      }
+
+      const candidate = data.candidates[0];
+      if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0]) {
+        console.error(`❌ [GeminiService] Missing content in response for ${targetPlayerId}:`, JSON.stringify(candidate, null, 2));
+        return;
+      }
+
       // Log Gemini response
-      if (this.apiLogger && data.candidates && data.candidates[0]) {
+      if (this.apiLogger) {
         this.apiLogger.log('Gemini', 'response', targetPlayerId, {
-          responseText: data.candidates[0].content?.parts[0]?.text || 'No text',
-          finishReason: data.candidates[0].finishReason,
+          responseText: candidate.content.parts[0].text || 'No text',
+          finishReason: candidate.finishReason,
           tokensUsed: data.usageMetadata?.totalTokenCount || 'unknown'
         });
       }
 
-      if (data.candidates && data.candidates[0].content) {
-        let responseText = data.candidates[0].content.parts[0].text;
-        console.log(`✅ [GeminiService] Response from ${session.name}: "${responseText}"`);
+      let responseText = candidate.content.parts[0].text;
+      console.log(`✅ [GeminiService] Response from ${session.name}: "${responseText}"`);
 
-        // CRITICAL FIX: Replace any standalone "You" with the actual player name
-        // This prevents AIs from saying "Right, You?" when they should say "Right, Chris?"
-        if (this.moderatorController && this.moderatorController.players.player1) {
-          const humanName = this.moderatorController.players.player1.name;
-          // Replace "You?" or "You," or "You " or "YOU" with the actual name (case insensitive)
-          // But NOT "your" or "you're" - only standalone "you"
-          responseText = responseText.replace(/\b(You|YOU)([?,!\s])/g, `${humanName}$2`);
-          responseText = responseText.replace(/\b(You|YOU)\./g, `${humanName}.`);
-          // Also replace when it's at the end of a sentence
-          responseText = responseText.replace(/,\s+(You|YOU)([?,!\s]|$)/g, `, ${humanName}$2`);
-          console.log(`🔧 [GeminiService] After You→${humanName} replacement: "${responseText}"`);
-        }
+      // NOTE: Pronoun replacement removed - AIs now correctly use "YOU" via prompt instructions
+      // The prompts explicitly teach correct pronoun usage with examples
 
-        // Add model response to history
-        session.history.push({ role: "model", parts: [{ text: responseText }] });
+      // Add model response to history
+      session.history.push({ role: "model", parts: [{ text: responseText }] });
 
-        // Send to Moderator Controller
-        if (this.moderatorController) {
-          // Note: Audio is empty here, ModeratorController will handle TTS via ElevenLabs
-          this.moderatorController.onAIResponse(targetPlayerId, responseText, null);
-        }
-      } else {
-        console.warn(`⚠️ [GeminiService] No content in response for ${targetPlayerId}`);
+      // Send to Moderator Controller
+      if (this.moderatorController) {
+        // Note: Audio is empty here, ModeratorController will handle TTS via ElevenLabs
+        this.moderatorController.onAIResponse(targetPlayerId, responseText, null);
       }
 
     } catch (error) {
@@ -167,6 +182,28 @@ export class GeminiLiveService {
       role: "model",
       parts: [{ text: "Understood. I will guide the conversation and direct questions at specific people." }]
     });
+  }
+
+  /**
+   * Send a system notification to all active AIs (e.g., elimination, round change)
+   */
+  sendSystemNotification(playerIds, notification) {
+    console.log(`📢 [GeminiService] System notification to ${playerIds.join(', ')}: ${notification}`);
+
+    for (const playerId of playerIds) {
+      const session = this.sessions.get(playerId);
+      if (session) {
+        // Add as a system message that doesn't require response
+        session.history.push({
+          role: "user",
+          parts: [{ text: `[SYSTEM ANNOUNCEMENT]: ${notification}` }]
+        });
+        session.history.push({
+          role: "model",
+          parts: [{ text: "Acknowledged." }]
+        });
+      }
+    }
   }
 
   /**
