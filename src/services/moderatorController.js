@@ -337,7 +337,7 @@ export class ModeratorController {
           }, 2000);
         }
       } else if (newPhase === GAME_PHASES.ROUND_3) {
-        this.geminiService.sendSystemNotification(activeAIs, "Round 3 - FINAL ROUND. Only two AIs remain. The President will ask a final question.");
+        this.startFinalRound();
       } else if (newPhase === GAME_PHASES.ELIMINATION_1 || newPhase === GAME_PHASES.ELIMINATION_2) {
         this.geminiService.sendSystemNotification(activeAIs, "Time is up! Voting phase has begun. You must vote to eliminate one player. Think carefully about who seems most like a bot.");
       }
@@ -408,8 +408,11 @@ export class ModeratorController {
       this.setPhase(GAME_PHASES.ELIMINATION_1);
     } else if (this.currentPhase === GAME_PHASES.ROUND_2) {
       this.setPhase(GAME_PHASES.ELIMINATION_2);
+    } else if (this.currentPhase === GAME_PHASES.ROUND_3) {
+      // After Round 3, President returns for final verdict
+      this.connectPlayer('moderator');
+      this.setPhase(GAME_PHASES.PRESIDENT_VERDICT);
     }
-    // Note: Round 3 doesn't exist anymore - we go straight to PRESIDENT_VERDICT after ELIMINATION_2
   }
 
   /**
@@ -549,7 +552,8 @@ export class ModeratorController {
       this.waitingForResponseFrom = null;
       this.questionAskedAt = null;
       if (playerId === 'player1') {
-        this.clearUserTurnForcing();
+        this.waitingForUserResponse = false;
+        this.userResponseDeadline = null;
       }
     }
 
@@ -765,10 +769,8 @@ export class ModeratorController {
     if (this.currentPhase === GAME_PHASES.ELIMINATION_1) {
       this.setPhase(GAME_PHASES.ROUND_2);
     } else if (this.currentPhase === GAME_PHASES.ELIMINATION_2) {
-      // After second elimination, President returns for final verdict
-      this.connectPlayer('moderator');
-      this.setPhase(GAME_PHASES.PRESIDENT_VERDICT);
-      // generateVerdict() will be called automatically by setPhase()
+      // After second elimination, go to Round 3 (Final Debate)
+      this.setPhase(GAME_PHASES.ROUND_3);
     }
   }
 
@@ -1021,67 +1023,27 @@ export class ModeratorController {
   }
 
   /**
-   * Generate and deliver the final verdict (Round 3)
-   * President returns, announces eliminations, asks final question, then decides
+   * Start Round 3 (Final Round)
+   * President returns, asks question, then leaves them to debate for 90s
    */
-  async generateVerdict() {
-    console.log('⚖️ [ModeratorController] President returning for final round...');
+  async startFinalRound() {
+    console.log('🏛️ [ModeratorController] Starting Final Round (Round 3)');
 
-    // Block all conversation during President's announcement
-    this.conversationBlocked = true;
-
-    // Get the two eliminated players
+    // Get eliminated players for context
     const eliminatedPlayersList = Array.from(this.eliminatedPlayers).map(id => this.players[id].name);
-
-    // Get remaining players
     const remainingPlayers = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
-    remainingPlayers.push('player1'); // Human is always there
+    remainingPlayers.push('player1');
     const remainingNames = remainingPlayers.map(id => this.players[id].name).join(' and ');
 
-    // Step 1: President announces return and eliminations (DYNAMICALLY)
-    // We will trigger a Gemini call for the President to generate this speech
-    const announcementContext = {
-      eliminatedPlayers: eliminatedPlayersList,
-      remainingPlayers: remainingPlayers.map(id => this.players[id].name),
-      isPresidentReturn: true
-    };
-
-    // Placeholder while generating (or fallback)
+    // 1. President Return Announcement
     const announcementText = `I have returned. ${eliminatedPlayersList.join(' and ')} have been eliminated. Only ${remainingNames} remain.`;
 
-    // Trigger Gemini to generate the actual speech
-    if (this.onTriggerAiResponse) {
-      this.onTriggerAiResponse('moderator', {
-        speakerName: 'President Dorkesh',
-        transcript: 'I have returned...', // Context for generation
-        presidentReturnAnnouncement: true,
-        eliminatedPlayers: eliminatedPlayersList
-      });
-    } else {
-      // Fallback if no trigger available
-      this.addToConversationHistory('moderator', announcementText);
-      if (this.onAudioPlayback) {
-        this.onAudioPlayback({
-          playerId: 'moderator',
-          transcript: announcementText,
-          audioData: null
-        });
-      }
-    }
-
-    // Add to conversation history
     this.addToConversationHistory('moderator', announcementText);
-
-    // Queue the announcement
     if (this.onAudioPlayback) {
-      this.onAudioPlayback({
-        playerId: 'moderator',
-        transcript: announcementText,
-        audioData: null
-      });
+      this.onAudioPlayback({ playerId: 'moderator', transcript: announcementText, audioData: null });
     }
 
-    // Step 2: After 3 seconds, President asks the final question
+    // 2. President Asks Question (after short delay)
     setTimeout(() => {
       const finalQuestions = [
         "When was the last time you cried, and why?",
@@ -1094,49 +1056,40 @@ export class ModeratorController {
       const questionText = `${this.players.player1.name}, ${question}`;
 
       this.addToConversationHistory('moderator', questionText);
-
       if (this.onAudioPlayback) {
-        this.onAudioPlayback({
-          playerId: 'moderator',
-          transcript: questionText,
-          audioData: null
-        });
+        this.onAudioPlayback({ playerId: 'moderator', transcript: questionText, audioData: null });
       }
 
-      // Unblock conversation - allow human to respond
-      this.conversationBlocked = false;
-      this.awaitingHumanResponse = true;
-
-      // Allow Domis (player3) to potentially intercept if not eliminated
-      // 50% chance Domis intercepts after 5 seconds
-      if (!this.eliminatedPlayers.has('player3')) {
-        setTimeout(() => {
-          if (Math.random() < 0.5 && this.onTriggerAiResponse) {
-            console.log('🎭 [ModeratorController] Domis intercepting President\'s question!');
-            this.onTriggerAiResponse('player3', {
-              speakerName: 'President',
-              transcript: questionText,
-              dominusInterception: true
-            });
-          }
-        }, 5000);
+      // Notify AIs about the question and round start
+      const activeAIs = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
+      if (this.geminiService) {
+        this.geminiService.sendSystemNotification(activeAIs, `Round 3 - FINAL ROUND. The President just asked ${this.players.player1.name}: "${question}". Debate this question and prove your humanity. You have 90 seconds.`);
       }
 
-      // Step 3: After 25 seconds, make final decision
+      // Trigger first AI response to the question (after delay)
       setTimeout(() => {
-        this.conversationBlocked = true; // Block again for verdict
-        this.awaitingHumanResponse = false;
-        this.deliverFinalVerdict();
-      }, 25000); // 25 seconds for human to respond and Domis to intercept
+        this.triggerNextAiTurn();
+      }, 2000);
 
-    }, 3000);
+    }, 4000);
   }
 
+  /**
+   * Generate and deliver the final verdict (Round 3)
+   * President returns, announces eliminations, asks final question, then decides
+   */
   /**
    * Deliver the final verdict after Round 3 questioning
    */
   async deliverFinalVerdict() {
     console.log('⚖️ [ModeratorController] Delivering final verdict...');
+
+    // STOP EVERYTHING ELSE
+    this.conversationBlocked = true;
+    if (this.pendingAiTurnTimer) {
+      clearTimeout(this.pendingAiTurnTimer);
+      this.pendingAiTurnTimer = null;
+    }
 
     // Construct transcript for analysis
     const transcriptText = this.fullTranscript.map(t => `${t.speaker}: ${t.text}`).join('\n');
@@ -1144,21 +1097,21 @@ export class ModeratorController {
     const remainingPlayers = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
     remainingPlayers.push('player1');
 
-    const prompt = `[SYSTEM]: You are President Dorkesh. You have just asked ${this.players.player1.name} a deeply personal question to test their humanity.
-
+    const prompt = `[SYSTEM]: You are President Dorkesh. You have been observing the final round of debate.
+    
 Remaining Players: ${remainingPlayers.map(id => this.players[id].name).join(', ')}.
 
 Full Transcript:
 ${transcriptText}
 
 Your Task:
-1. Analyze how ${this.players.player1.name} responded to your question.
+1. Analyze the final debate and how ${this.players.player1.name} responded to your question.
 2. Decide if they are the REAL HUMAN or a bot.
 3. Deliver your final verdict (max 80 words).
 4. Announce either "${this.players.player1.name}, you are HUMAN. You may escape the simulation." OR "${this.players.player1.name}, you are a BOT. The simulation will now collapse."
 5. Be dramatic, authoritative, and final.
 
-Format your response as just the verdict speech.`;
+CRITICAL: Output ONLY the verdict speech. Do NOT output your reasoning or analysis. Just the speech.`;
 
     try {
       if (this.geminiService) {
@@ -1166,6 +1119,12 @@ Format your response as just the verdict speech.`;
       }
     } catch (e) {
       console.error('❌ Verdict generation failed:', e);
+      // Fallback if it fails
+      const fallbackVerdict = `${this.players.player1.name}, your silence was your undoing. You are a BOT. The simulation will now collapse.`;
+      this.addToConversationHistory('moderator', fallbackVerdict);
+      if (this.onAudioPlayback) {
+        this.onAudioPlayback({ playerId: 'moderator', transcript: fallbackVerdict, audioData: null });
+      }
     }
   }
 

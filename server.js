@@ -75,7 +75,15 @@ export const apiLogger = {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// CORS configuration for production
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || '*', // Set FRONTEND_URL env var to your Lovable domain
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Create HTTP server
@@ -458,7 +466,7 @@ Respond with ONLY the player ID (e.g., "player1" or "player2" or "player3" or "p
         }],
         generationConfig: {
           temperature: 0.5, // Lowered for more consistent voting
-          maxOutputTokens: 50 // Increased to prevent cut-offs even for short answers
+          maxOutputTokens: 300 // Increased to prevent cut-offs (was 150)
         }
       })
     });
@@ -558,9 +566,9 @@ moderatorController.onAudioPlayback = async (playbackItem) => {
 };
 
 moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
-  // Variable delay for natural pacing (REDUCED as per user request):
-  // - 1-2 seconds range to keep conversation snappy
-  const delay = Math.floor(Math.random() * 1000) + 1000; // 1-2s
+  // Variable delay for natural pacing (INCREASED as per user request):
+  // - 2-4 seconds range to reduce spamminess
+  const delay = Math.floor(Math.random() * 2000) + 2000; // 2-4s
 
   setTimeout(async () => {
     console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} after ${delay}ms`);
@@ -598,9 +606,9 @@ moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
       // DEFAULT: Encourage player engagement (50% chance to question the player)
       const shouldQuestionHuman = Math.random() < 0.5;
       if (shouldQuestionHuman) {
-        prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said, but ALSO directly address ${humanName} with a question to test if they're human. Examples: "What do YOU think, ${humanName}?" or "${humanName}, do you agree?" Stay in character. Keep it under 30 words total.]`;
+        prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said, but ALSO directly address ${humanName} with a question to test if they're human. Examples: "What do YOU think, ${humanName}?" or "${humanName}, do you agree?" Stay in character. Keep it under 30 words total. DO NOT state who you are addressing (e.g. "Addressing Scan"). Just speak.]`;
       } else {
-        prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said. Stay in character. Keep it under 30 words.]`;
+        prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said. Stay in character. Keep it under 30 words. DO NOT state who you are addressing (e.g. "Addressing Scan"). Just speak.]`;
       }
     }
 
@@ -608,6 +616,10 @@ moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
       await geminiLiveService.sendText(prompt, targetPlayerId, conversationContext);
     } catch (e) {
       console.error(`❌ [Server] Auto-response failed for ${targetPlayerId}:`, e);
+      // Retry with a different speaker to prevent game stall
+      setTimeout(() => {
+        moderatorController.triggerNextAiTurn();
+      }, 1000);
     }
   }, delay);
 };

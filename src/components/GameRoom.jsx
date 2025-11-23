@@ -175,6 +175,11 @@ const GameRoom = () => {
                         <p className="text-lg text-slate-300">
                             <span className="text-amber-200 font-semibold">You</span> are the only real human. Convince them. Save the world.
                         </p>
+                        <div className="mt-6 pt-6 border-t border-slate-700/50">
+                            <p className="text-sm text-slate-400 italic">
+                                Note: Each AI is a separate instance. They genuinely do not know who the human is and are trying their best to identify you.
+                            </p>
+                        </div>
                     </div>
 
                     {/* Input Field */}

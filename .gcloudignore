@@ -1,0 +1,50 @@
+# Git files
+.git
+.gitignore
+
+# Node modules (will be installed during build)
+node_modules/
+
+# Environment files (use Cloud Run secrets instead)
+.env
+.env.local
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Frontend/React files (not needed for backend)
+src/components/
+src/contexts/
+src/App.jsx
+src/main.jsx
+src/index.css
+public/
+index.html
+vite.config.js
+postcss.config.js
+tailwind.config.js
+
+# Test files
+test/
+*.test.js
+*.spec.js
+
+# Documentation
+README.md
+docs/
+
+# Other
+.dockerignore

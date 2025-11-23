@@ -204,6 +204,12 @@ export const GameProvider = ({ children }) => {
           try {
             // Use persistent AudioContext
             const audioContext = getAudioContext();
+
+            // Resume context if suspended (fixes "first syllable cut-off")
+            if (audioContext.state === 'suspended') {
+              await audioContext.resume();
+            }
+
             const source = audioContext.createMediaElementSource(audio);
 
             // Create bandpass filter for phone call effect (300Hz - 3400Hz)
@@ -331,6 +337,19 @@ export const GameProvider = ({ children }) => {
   };
 
   const sendHumanInput = (text) => {
+    // Optimistic update: Show message immediately in UI
+    const optimisticMsg = {
+      playerId: 'player1',
+      speaker: gameState.players.player1?.name || 'You',
+      text: text,
+      timestamp: Date.now()
+    };
+
+    setGameState(prev => ({
+      ...prev,
+      transcript: [...(prev.transcript || []), optimisticMsg]
+    }));
+
     if (wsRef.current && isConnected) {
       wsRef.current.send(JSON.stringify({
         type: 'HUMAN_INPUT',

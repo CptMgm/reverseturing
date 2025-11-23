@@ -99,10 +99,10 @@ export class GeminiLiveService {
           contents: session.history,
           generationConfig: {
             response_modalities: ["TEXT"], // Explicitly request TEXT only
-            temperature: 0.5, // Lowered for more focused responses
+            temperature: 0.5, // Lowered for stability
             topK: 40,
             topP: 0.95,
-            maxOutputTokens: 500, // Increased to prevent cut-offs
+            maxOutputTokens: 800, // Increased to prevent cut-offs (was 500)
           }
         })
       });
