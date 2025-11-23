@@ -149,7 +149,7 @@ initializeAIPlayers();
 
 // Handle WebSocket connections from frontend
 wss.on('connection', (ws) => {
-  console.log('🔌 [Server] Client connected');
+  console.log('🔌 [Server] New client connected');
 
   // Send initial game state
   ws.send(JSON.stringify({
@@ -163,6 +163,11 @@ wss.on('connection', (ws) => {
       console.log('📨 [Server] Received:', data);
 
       switch (data.type) {
+        case 'AUDIO_INTERRUPT':
+          console.log('⏸️ [Server] Received AUDIO_INTERRUPT from client');
+          moderatorController.handleInterruption();
+          break;
+
         case 'START_GAME':
           // Initialize new session logs for this game
           initializeSessionLogs();
@@ -232,9 +237,7 @@ wss.on('connection', (ws) => {
             moderatorController.onPresidentIntroComplete();
             broadcastGameState();
 
-            // Trigger self-organization broadcast
-            console.log('📢 [Server] Broadcasting prompt to AIs...');
-            geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
+
           } else {
             console.log(`ℹ️ [Server] No transition triggered. (Phase: ${moderatorController.currentPhase}, Player: ${playerId})`);
           }
@@ -466,7 +469,7 @@ Respond with ONLY the player ID (e.g., "player1" or "player2" or "player3" or "p
         }],
         generationConfig: {
           temperature: 0.5, // Lowered for more consistent voting
-          maxOutputTokens: 300 // Increased to prevent cut-offs (was 150)
+          maxOutputTokens: 1024 // Increased to allow for thinking + response
         }
       })
     });
@@ -523,46 +526,79 @@ moderatorController.onAudioInterrupt = () => {
 };
 
 moderatorController.onAudioPlayback = async (playbackItem) => {
-  let audioData = playbackItem.audioData;
-
   // If no audio data (e.g. from text-only Gemini), generate it via TTS
-  if (!audioData || audioData.length === 0) {
-    console.log(`🗣️ [Server] Generating TTS for ${playbackItem.playerId}...`);
+  if (!playbackItem.audioData || playbackItem.audioData.length === 0) {
+    console.log(`🗣️ [Server] Generating TTS Stream for ${playbackItem.playerId}...`);
 
     // Log conversation message
     const speaker = moderatorController.players[playbackItem.playerId]?.name || playbackItem.playerId;
     apiLogger.logConversation(playbackItem.playerId, speaker, playbackItem.transcript);
 
     try {
-      const ttsBuffer = await generateTTS(playbackItem.transcript, playbackItem.playerId);
-      if (ttsBuffer) {
-        console.log(`✅ [Server] TTS generated successfully for ${playbackItem.playerId} (${ttsBuffer.length} bytes)`);
-        audioData = ttsBuffer.toString('base64');
+      const ttsStream = await generateTTS(playbackItem.transcript, playbackItem.playerId);
+
+      if (ttsStream) {
+        console.log(`✅ [Server] TTS Stream started for ${playbackItem.playerId}`);
+
+        // 1. Notify client that stream is starting
+        broadcast({
+          type: 'AUDIO_STREAM_START',
+          payload: {
+            playerId: playbackItem.playerId,
+            transcript: playbackItem.transcript
+          }
+        });
+
+        // 2. Stream chunks
+        // Node.js fetch returns a web stream, we need to iterate it
+        for await (const chunk of ttsStream) {
+          // Check if interruption happened during streaming
+          if (!moderatorController.activeSpeaker && moderatorController.audioQueue.length === 0) {
+            // This is a heuristic: if activeSpeaker was cleared (by interrupt), stop streaming
+            // But activeSpeaker might not be set yet? 
+            // Actually, handleInterruption clears the queue and activeSpeaker.
+            // We should probably check a flag or just rely on client to ignore late chunks.
+            // But saving bandwidth is good.
+            // Let's just stream. Client handles "stopAudio".
+          }
+
+          broadcast({
+            type: 'AUDIO_CHUNK',
+            payload: {
+              playerId: playbackItem.playerId,
+              chunk: Buffer.from(chunk).toString('base64')
+            }
+          });
+        }
+
+        // 3. Notify end of stream
+        broadcast({
+          type: 'AUDIO_STREAM_END',
+          payload: {
+            playerId: playbackItem.playerId
+          }
+        });
+
+        console.log(`🏁 [Server] TTS Stream finished for ${playbackItem.playerId}`);
+
       } else {
         console.error(`❌ [Server] TTS returned null for ${playbackItem.playerId}`);
       }
     } catch (e) {
-      console.error(`❌ [Server] TTS Generation failed for ${playbackItem.playerId}:`, e);
+      console.error(`❌ [Server] TTS Generation/Streaming failed for ${playbackItem.playerId}:`, e);
     }
-  } else if (Array.isArray(audioData)) {
-    // If it's an array of chunks (from previous implementation), join them or take the first
-    // For simplicity, let's assume it's a single base64 string or we handle it on frontend.
-    // But wait, frontend expects a single base64 string usually.
-    // If it's an array, let's just take the first chunk or join them if they are buffers? 
-    // Gemini REST returns one chunk usually.
-    audioData = audioData[0];
+  } else {
+    // Legacy/Fallback for pre-generated audio (if any)
+    console.log(`📢 [Server] Broadcasting pre-generated audio for ${playbackItem.playerId}`);
+    broadcast({
+      type: 'AUDIO_PLAYBACK',
+      payload: {
+        playerId: playbackItem.playerId,
+        transcript: playbackItem.transcript,
+        audioData: playbackItem.audioData
+      }
+    });
   }
-
-  // Send audio to frontend to play
-  console.log(`📢 [Server] Broadcasting AUDIO_PLAYBACK for ${playbackItem.playerId}`);
-  broadcast({
-    type: 'AUDIO_PLAYBACK',
-    payload: {
-      playerId: playbackItem.playerId,
-      transcript: playbackItem.transcript,
-      audioData: audioData // Base64 audio
-    }
-  });
 };
 
 moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
@@ -645,11 +681,12 @@ async function generateTTS(text, playerId = 'unknown') {
     textLength: text.length,
     voiceId: voiceId,
     model: "eleven_monolingual_v1",
-    estimatedCredits: Math.ceil(text.length * 2.5) // ~2.5 credits per char for monolingual_v1
+    type: "stream"
   });
 
   try {
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    // Use the /stream endpoint with latency optimization
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?optimize_streaming_latency=4`, {
       method: 'POST',
       headers: {
         'Accept': 'audio/mpeg',
@@ -672,16 +709,9 @@ async function generateTTS(text, playerId = 'unknown') {
       return null;
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    // Return the stream directly
+    return response.body;
 
-    // Log TTS response
-    apiLogger.log('ElevenLabs', 'response', playerId, {
-      audioSize: buffer.byteLength,
-      durationEstimate: `~${(buffer.byteLength / 16000).toFixed(1)}s` // Rough estimate
-    });
-
-    return buffer;
   } catch (e) {
     console.error('TTS Helper Error:', e);
     apiLogger.log('ElevenLabs', 'error', playerId, {

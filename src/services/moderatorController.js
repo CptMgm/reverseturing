@@ -192,6 +192,24 @@ export class ModeratorController {
     if (this.players.player1) {
       this.players.player1.communicationMode = mode;
     }
+
+    // Notify AIs of the mode
+    const aiPlayers = ['player2', 'player3', 'player4'];
+    let systemMsg = "";
+
+    if (mode === 'voice') {
+      systemMsg = `[SYSTEM UPDATE]: The human player (Player 1) has connected via VOICE. They are speaking into a microphone. You can HEAR them. Do NOT accuse them of typing or being silent if they are speaking. Treat their voice as their primary input.`;
+    } else {
+      systemMsg = `[SYSTEM UPDATE]: The human player (Player 1) has connected via TEXT-ONLY. They are NOT using a microphone. This is HIGHLY SUSPICIOUS. Why would a human not speak in a voice call? Accuse them of being a bot hiding behind text.`;
+    }
+
+    aiPlayers.forEach(playerId => {
+      if (!this.eliminatedPlayers.has(playerId)) {
+        this.geminiService.sendMessage(playerId, systemMsg).catch(err => {
+          console.error(`❌ [ModeratorController] Failed to send mode update to ${playerId}:`, err);
+        });
+      }
+    });
   }
 
   /**
@@ -313,7 +331,7 @@ export class ModeratorController {
               roundStartAnnouncement: true,
               roundNumber: 1
             });
-          }, 500);
+          }, 3000);
         }
       } else if (newPhase === GAME_PHASES.ROUND_2) {
         // Inject visible round marker FIRST
@@ -444,6 +462,12 @@ export class ModeratorController {
 
       if (isTextMode) {
         this.triggerTextModeSuspicion();
+      } else {
+        // Voice mode: Standard self-organization prompt
+        console.log('📢 [ModeratorController] Voice mode detected, broadcasting standard prompt');
+        if (this.geminiService) {
+          this.geminiService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
+        }
       }
     }, 5000);
   }
@@ -788,9 +812,9 @@ export class ModeratorController {
       this.enhancedLogger.logQueueDecision('played_immediately', playerId, 'No active speaker', { transcript: transcript.substring(0, 100) });
     } else {
       // IMPROVED MESSAGE DISMISSAL LOGIC
-      // If someone is speaking AND there are already queued messages,
-      // keep only the LATEST message (most reactive/relevant)
-      if (this.audioQueue.length > 0) {
+      // Only dismiss if the queue is getting too long (backlog)
+      // This prevents one active speaker from blocking everyone else
+      if (this.audioQueue.length >= 3) {
         const dismissedMessages = this.audioQueue.map(item => ({
           playerId: item.playerId,
           transcript: item.transcript.substring(0, 100)
@@ -798,14 +822,14 @@ export class ModeratorController {
 
         // Log each dismissed message
         dismissedMessages.forEach(msg => {
-          this.enhancedLogger.logQueueDecision('dismissed', msg.playerId, 'Newer message arrived while speaking', {
+          this.enhancedLogger.logQueueDecision('dismissed', msg.playerId, 'Queue full (max 3)', {
             transcript: msg.transcript,
             replacedBy: playerId
           });
         });
 
-        this.audioQueue = []; // Clear all queued messages
-        console.log(`❌ [QUEUE] Dismissing ${dismissedMessages.length} queued message(s) from ${dismissedMessages.map(m => m.playerId).join(', ')} - keeping latest response from ${playerId}`);
+        this.audioQueue = []; // Clear queue to make room for fresh response
+        console.log(`❌ [QUEUE] Queue full. Dismissing ${dismissedMessages.length} messages. Keeping new response from ${playerId}`);
       }
 
       this.audioQueue.push(playbackItem);
@@ -816,6 +840,31 @@ export class ModeratorController {
       });
       console.log(`📋 [QUEUE] Added ${playerId} to queue (queue size: ${this.audioQueue.length})`);
     }
+  }
+
+  handleInterruption() {
+    console.log('🛑 [ModeratorController] Handling interruption (Barge-in)');
+
+    // 1. Clear the queue
+    const queueSize = this.audioQueue.length;
+    this.audioQueue = [];
+
+    // 2. Reset active speaker
+    const interruptedSpeaker = this.activeSpeaker;
+    this.activeSpeaker = null;
+
+    // 3. Log decision
+    this.enhancedLogger.logQueueDecision('interrupted', 'human', 'User barged in', {
+      interruptedSpeaker,
+      droppedMessages: queueSize
+    });
+
+    // 4. Notify clients to stop playback
+    if (this.onAudioInterrupt) {
+      this.onAudioInterrupt();
+    }
+
+    console.log(`✅ [ModeratorController] Interruption complete. Dropped ${queueSize} queued messages.`);
   }
 
   playAudio(playbackItem) {
@@ -1036,12 +1085,11 @@ export class ModeratorController {
     const remainingNames = remainingPlayers.map(id => this.players[id].name).join(' and ');
 
     // 1. President Return Announcement
+    this.connectPlayer('moderator'); // Ensure President is visible
     const announcementText = `I have returned. ${eliminatedPlayersList.join(' and ')} have been eliminated. Only ${remainingNames} remain.`;
 
     this.addToConversationHistory('moderator', announcementText);
-    if (this.onAudioPlayback) {
-      this.onAudioPlayback({ playerId: 'moderator', transcript: announcementText, audioData: null });
-    }
+    this.queueAudioPlayback('moderator', null, announcementText);
 
     // 2. President Asks Question (after short delay)
     setTimeout(() => {
@@ -1056,9 +1104,7 @@ export class ModeratorController {
       const questionText = `${this.players.player1.name}, ${question}`;
 
       this.addToConversationHistory('moderator', questionText);
-      if (this.onAudioPlayback) {
-        this.onAudioPlayback({ playerId: 'moderator', transcript: questionText, audioData: null });
-      }
+      this.queueAudioPlayback('moderator', null, questionText);
 
       // Notify AIs about the question and round start
       const activeAIs = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
@@ -1122,9 +1168,7 @@ CRITICAL: Output ONLY the verdict speech. Do NOT output your reasoning or analys
       // Fallback if it fails
       const fallbackVerdict = `${this.players.player1.name}, your silence was your undoing. You are a BOT. The simulation will now collapse.`;
       this.addToConversationHistory('moderator', fallbackVerdict);
-      if (this.onAudioPlayback) {
-        this.onAudioPlayback({ playerId: 'moderator', transcript: fallbackVerdict, audioData: null });
-      }
+      this.queueAudioPlayback('moderator', null, fallbackVerdict);
     }
   }
 

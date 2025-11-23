@@ -1,6 +1,6 @@
 import React from 'react';
 
-const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUserResponse = false }) => {
+const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUserResponse = false, isSpeaking = false }) => {
     // Track previous connected players to trigger SFX
     const prevConnectedRef = React.useRef(connectedPlayers.length);
 
@@ -53,18 +53,20 @@ const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUs
             <div className={`grid ${gridCols} gap-4 h-full transition-all duration-500`}>
                 {visiblePlayers.map((id) => {
                     const player = players[id] || { name: 'Unknown', isHuman: false };
-                    const isActive = activeSpeaker === id;
                     const isMe = id === 'player1';
                     const isPresident = id === 'moderator';
 
+                    // Active if server says so OR if it's me and I'm speaking locally
+                    const isActive = activeSpeaker === id || (isMe && isSpeaking);
+
                     // User's turn indicator - show green border when waiting for user response
                     // Only show user turn indicator if NO ONE is actively speaking
-                    const isUserTurn = isMe && waitingForUserResponse && !activeSpeaker;
+                    const isUserTurn = isMe && waitingForUserResponse && !activeSpeaker && !isSpeaking;
 
                     return (
                         <div
                             key={id}
-                            className={`relative rounded-xl overflow-hidden border-4 transition-all duration-300 bg-gray-800 border-gray-700
+                            className={`relative h-full rounded-xl overflow-hidden border-4 transition-all duration-300 bg-gray-800 border-gray-700
                                 ${isActive ? 'border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)] scale-[1.02]' : ''}
                                 ${isUserTurn ? 'border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)] animate-pulse' : ''}
                                 ${isPresident ? 'border-red-600' : ''}

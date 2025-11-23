@@ -19,6 +19,7 @@ export const GameProvider = ({ children }) => {
   const [dailyUrl, setDailyUrl] = useState(null);
   const [systemError, setSystemError] = useState(null);
   const [communicationMode, setCommunicationMode] = useState(null); // 'voice' or 'text'
+  const [isSpeaking, setIsSpeaking] = useState(false); // Track if user is currently speaking
   const [showModeSelection, setShowModeSelection] = useState(false);
   const modeSelectedRef = useRef(false); // Track if mode was already selected
   const wsRef = useRef(null);
@@ -26,6 +27,258 @@ export const GameProvider = ({ children }) => {
   const isPlayingRef = useRef(false);
   const currentAudioRef = useRef(null); // Store currently playing audio element
   const callObjectRef = useRef(null);
+
+  const recognitionRef = useRef(null);
+
+  const mediaSourceRef = useRef(null);
+  const sourceBufferRef = useRef(null);
+  const audioQueueBufferRef = useRef([]); // Buffer for chunks if SourceBuffer is updating
+
+  const stopAudio = () => {
+    console.log('🛑 [GameContext] Stopping all audio playback');
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      if (currentAudioRef.current.src) {
+        URL.revokeObjectURL(currentAudioRef.current.src);
+      }
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
+
+    // Cleanup MediaSource
+    if (mediaSourceRef.current) {
+      try {
+        if (sourceBufferRef.current && sourceBufferRef.current.updating) {
+          sourceBufferRef.current.abort();
+        }
+        if (mediaSourceRef.current.readyState === 'open') {
+          mediaSourceRef.current.endOfStream();
+        }
+      } catch (e) {
+        // Ignore error if already closed or invalid state
+        console.warn('⚠️ [GameContext] MediaSource cleanup warning:', e);
+      }
+      mediaSourceRef.current = null;
+      sourceBufferRef.current = null;
+    }
+    audioQueueBufferRef.current = [];
+
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    setGameState(prev => ({ ...prev, activeSpeaker: null }));
+  };
+
+  const handleStreamStart = (payload) => {
+    console.log(`🌊 [GameContext] Starting audio stream for ${payload.playerId}`);
+    stopAudio(); // Ensure clean slate
+
+    const mediaSource = new MediaSource();
+    mediaSourceRef.current = mediaSource;
+
+    const audio = new Audio();
+    audio.src = URL.createObjectURL(mediaSource);
+    currentAudioRef.current = audio;
+
+    // Set active speaker immediately
+    setGameState(prev => ({ ...prev, activeSpeaker: payload.playerId }));
+    isPlayingRef.current = true;
+
+    mediaSource.addEventListener('sourceopen', () => {
+      try {
+        // ElevenLabs returns MP3 chunks
+        const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+        sourceBufferRef.current = sourceBuffer;
+
+        sourceBuffer.addEventListener('updateend', () => {
+          if (audioQueueBufferRef.current.length > 0 && sourceBufferRef.current && !sourceBufferRef.current.updating) {
+            const nextChunk = audioQueueBufferRef.current.shift();
+            try {
+              sourceBufferRef.current.appendBuffer(nextChunk);
+            } catch (e) {
+              console.error('Error appending buffer from queue:', e);
+            }
+          }
+        });
+
+        console.log('✅ [GameContext] MediaSource opened and buffer ready');
+        audio.play().catch(e => console.error('Stream playback failed:', e));
+      } catch (e) {
+        console.error('❌ [GameContext] Failed to add SourceBuffer:', e);
+      }
+    });
+
+    audio.onended = () => {
+      console.log(`⏹️ [GameContext] Stream ended for ${payload.playerId}`);
+      isPlayingRef.current = false;
+      setGameState(prev => ({ ...prev, activeSpeaker: null }));
+      URL.revokeObjectURL(audio.src);
+    };
+  };
+
+  const handleAudioChunk = (payload) => {
+    if (!sourceBufferRef.current || !mediaSourceRef.current) return;
+
+    try {
+      const binaryString = window.atob(payload.chunk);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      if (sourceBufferRef.current.updating || audioQueueBufferRef.current.length > 0) {
+        audioQueueBufferRef.current.push(bytes);
+      } else {
+        sourceBufferRef.current.appendBuffer(bytes);
+      }
+    } catch (e) {
+      console.error('❌ [GameContext] Error handling audio chunk:', e);
+    }
+  };
+
+  const handleStreamEnd = () => {
+    if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
+      try {
+        // Wait for buffer to finish updating before ending stream?
+        // Actually endOfStream() can be called even if buffer is updating? No, it throws.
+        // We should wait.
+        const finishStream = () => {
+          if (sourceBufferRef.current && !sourceBufferRef.current.updating && audioQueueBufferRef.current.length === 0) {
+            mediaSourceRef.current.endOfStream();
+            console.log('🏁 [GameContext] MediaSource stream ended signal received');
+          } else {
+            setTimeout(finishStream, 100);
+          }
+        };
+        finishStream();
+      } catch (e) {
+        console.error('Error ending stream:', e);
+      }
+    }
+  };
+
+  const startVoiceMode = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.error('❌ [GameContext] SpeechRecognition not supported in this browser.');
+      setSystemError('Voice Mode not supported in this browser (try Chrome).');
+      return;
+    }
+
+    console.log('🎤 [GameContext] Starting Voice Mode (SpeechRecognition)...');
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      console.log('🎤 [GameContext] Voice recognition started');
+    };
+
+    recognition.onspeechstart = () => {
+      console.log('🗣️ [GameContext] Speech detected (Barge-in triggered)');
+      setIsSpeaking(true);
+
+      // 1. Stop local audio immediately
+      stopAudio();
+
+      // 2. Tell server to stop generating/queuing
+      if (wsRef.current && isConnected) {
+        wsRef.current.send(JSON.stringify({ type: 'AUDIO_INTERRUPT' }));
+      }
+    };
+
+    recognition.onspeechend = () => {
+      console.log('🤫 [GameContext] Speech ended');
+      setIsSpeaking(false);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length - 1][0].transcript;
+      console.log(`🗣️ [GameContext] Heard: "${transcript}"`);
+
+      if (transcript.trim().length > 0) {
+        sendHumanInput(transcript);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error('❌ [GameContext] Speech recognition error:', event.error);
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setSystemError('Microphone access denied. Please allow microphone access.');
+        // Do not restart if permission denied
+        recognitionRef.current = null;
+      }
+    };
+
+    recognition.onend = () => {
+      console.log('🎤 [GameContext] Voice recognition ended.');
+      // Auto-restart if mode is still voice (unless explicitly stopped or permission denied)
+      if (communicationMode === 'voice' && recognitionRef.current) {
+        console.log('🔄 [GameContext] Restarting recognition in 1s...');
+        setTimeout(() => {
+          if (communicationMode === 'voice' && recognitionRef.current) {
+            try {
+              recognition.start();
+            } catch (e) {
+              console.log('⚠️ [GameContext] Could not restart recognition:', e);
+            }
+          }
+        }, 1000); // 1 second backoff to prevent tight loops
+      }
+    };
+
+    // BARGE-IN LOGIC: Detect speech start to interrupt AI
+    // Note: 'onspeechstart' is not reliably supported in all browsers/implementations of Web Speech API.
+    // 'onsoundstart' or 'onaudiostart' might be alternatives, but often fire on noise.
+    // For MVP, let's try 'onspeechstart'. If it fails, we might need a separate VAD (hark.js) later.
+    recognition.onspeechstart = () => {
+      console.log('🗣️ [GameContext] Speech detected (Barge-in triggered)');
+
+      // 1. Stop local audio immediately
+      stopAudio();
+
+      // 2. Tell server to stop generating/queuing
+      if (wsRef.current && isConnected) {
+        wsRef.current.send(JSON.stringify({ type: 'AUDIO_INTERRUPT' }));
+      }
+    };
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.error('❌ [GameContext] Failed to start recognition:', e);
+    }
+  };
+
+  const stopVoiceMode = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      console.log('🎤 [GameContext] Stopped Voice Mode');
+    }
+  };
+
+  // Helper to convert Float32 to Int16
+  const convertFloat32ToInt16 = (float32Array) => {
+    const int16Array = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return int16Array;
+  };
+
+  const arrayBufferToBase64 = (buffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+  };
 
   useEffect(() => {
     // Connect to WebSocket
@@ -63,17 +316,21 @@ export const GameProvider = ({ children }) => {
             queueAudio(data.payload);
             break;
 
+          case 'AUDIO_STREAM_START':
+            handleStreamStart(data.payload);
+            break;
+
+          case 'AUDIO_CHUNK':
+            handleAudioChunk(data.payload);
+            break;
+
+          case 'AUDIO_STREAM_END':
+            handleStreamEnd();
+            break;
+
           case 'AUDIO_INTERRUPT':
             console.log('⏸️ Interrupting current audio playback');
-            // Stop current audio and clear queue
-            if (currentAudioRef.current) {
-              currentAudioRef.current.pause();
-              currentAudioRef.current.currentTime = 0;
-              currentAudioRef.current = null;
-            }
-            audioQueueRef.current = [];
-            isPlayingRef.current = false;
-            setGameState(prev => ({ ...prev, activeSpeaker: null }));
+            stopAudio();
             break;
 
           case 'DAILY_ROOM':
@@ -99,6 +356,7 @@ export const GameProvider = ({ children }) => {
 
     return () => {
       ws.close();
+      stopAudio(); // Ensure audio stops when component unmounts
     };
   }, []);
 
@@ -373,18 +631,11 @@ export const GameProvider = ({ children }) => {
     }
   };
 
-  const selectCommunicationMode = (mode) => {
-    console.log(`🎙️ [GameContext] User selected ${mode} mode`);
-
-    // Mark as selected (prevents modal from reopening)
-    modeSelectedRef.current = true;
+  const selectCommunicationMode = async (mode) => {
+    console.log(`🎤 [GameContext] Selecting communication mode: ${mode}`);
     setCommunicationMode(mode);
     setShowModeSelection(false);
-
-    // Unlock audio context on user interaction (critical for autoplay)
-    getAudioContext();
-    const unlockAudio = new Audio();
-    unlockAudio.play().catch(e => console.log('Audio unlock attempt:', e));
+    modeSelectedRef.current = true;
 
     // Send mode to server
     if (wsRef.current && isConnected) {
@@ -392,6 +643,22 @@ export const GameProvider = ({ children }) => {
         type: 'SET_COMMUNICATION_MODE',
         payload: { mode }
       }));
+    }
+
+    // Initialize audio context (needed for both modes for playback)
+    try {
+      const audioContext = getAudioContext();
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      console.log('🔊 [GameContext] AudioContext initialized/resumed');
+    } catch (e) {
+      console.error('❌ [GameContext] Failed to initialize AudioContext:', e);
+    }
+
+    // If Voice Mode, start capturing audio
+    if (mode === 'voice') {
+      startVoiceMode();
     }
 
     // If text mode selected, announce it to the AIs
@@ -411,6 +678,8 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+
+
   return (
     <GameContext.Provider value={{
       gameState,
@@ -424,7 +693,16 @@ export const GameProvider = ({ children }) => {
       communicationMode,
       showModeSelection,
       selectCommunicationMode,
-      sendTypingEvent
+      isSpeaking,
+      sendTypingEvent,
+      startVoiceMode,
+      stopVoiceMode,
+      resetGame: () => {
+        stopAudio(); // Stop local audio immediately
+        if (wsRef.current && isConnected) {
+          wsRef.current.send(JSON.stringify({ type: 'RESET_GAME' }));
+        }
+      }
     }}>
       {children}
     </GameContext.Provider>

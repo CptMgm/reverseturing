@@ -20,7 +20,9 @@ const GameRoom = () => {
         communicationMode,
         showModeSelection,
         selectCommunicationMode,
-        sendTypingEvent
+        isSpeaking,
+        sendTypingEvent,
+        resetGame
     } = useGame();
 
     // ALL HOOKS MUST BE DECLARED BEFORE ANY CONDITIONAL RETURNS
@@ -49,8 +51,12 @@ const GameRoom = () => {
                 setEndScreenResult('lose');
                 setShowEndScreen(true);
             }, 2000); // 2 second delay to show elimination animation/message
+        } else if (gameState.phase === 'LOBBY') {
+            // Reset end screen when returning to lobby
+            setShowEndScreen(false);
+            setEndScreenResult('disconnected');
         }
-    }, [gameState.eliminatedPlayers]);
+    }, [gameState.eliminatedPlayers, gameState.phase]);
 
     useEffect(() => {
         if (dailyUrl && !callFrameRef.current) {
@@ -98,7 +104,7 @@ const GameRoom = () => {
 
     // NOW CONDITIONAL RETURNS ARE SAFE
     if (showEndScreen) {
-        return <EndScreen result={endScreenResult} />;
+        return <EndScreen result={endScreenResult} onRestart={resetGame} />;
     }
 
     if (!isConnected) {
@@ -328,15 +334,17 @@ const GameRoom = () => {
                         <div ref={dailyRef} className="w-full h-full" />
                     </div>
 
-                    {/* Custom Video Grid Overlay */}
-                    <div className="relative z-10 h-full">
+                    {/* Video Grid */}
+                    <div className="h-full overflow-hidden relative z-10">
                         <VideoGrid
                             players={gameState.players}
                             activeSpeaker={gameState.activeSpeaker}
-                            connectedPlayers={gameState.connectedPlayers}
-                            waitingForUserResponse={gameState.waitingForUserResponse}
+                            connectedPlayers={Object.keys(gameState.players)}
+                            waitingForUserResponse={gameState.awaitingHumanResponse}
+                            isSpeaking={isSpeaking}
                         />
                     </div>
+
                 </div>
 
                 {/* Right Side: Chat & Voting - Collapsible */}
