@@ -6,6 +6,7 @@ import VoteControls from './VoteControls';
 import PresidentOverlay from './PresidentOverlay';
 import ModeSelectionModal from './ModeSelectionModal';
 import EndScreen from './EndScreen';
+import AIHarmsInfographic from './AIHarmsInfographic';
 
 
 
@@ -31,10 +32,14 @@ const GameRoom = () => {
     const [isTyping, setIsTyping] = useState(false);
     const [showEndScreen, setShowEndScreen] = useState(false);
     const [endScreenResult, setEndScreenResult] = useState('disconnected');
+    const [roundOverlay, setRoundOverlay] = useState(null); // { title: 'ROUND 1', subtitle: 'Identify the Human' }
+    const [userAvatar, setUserAvatar] = useState(null);
+    const [showAbout, setShowAbout] = useState(false);
     const dailyRef = useRef(null);
     const callFrameRef = useRef(null);
     const typingTimeoutRef = useRef(null);
     const chatEndRef = useRef(null);
+    const prevPhaseRef = useRef(gameState.phase);
 
     // Auto-scroll chat to bottom when new messages arrive
     useEffect(() => {
@@ -55,6 +60,22 @@ const GameRoom = () => {
             // Reset end screen when returning to lobby
             setShowEndScreen(false);
             setEndScreenResult('disconnected');
+        }
+
+        // ROUND TRANSITION OVERLAYS
+        if (gameState.phase !== prevPhaseRef.current) {
+            // Show Round 1 overlay when entering ROUND_1
+            if (gameState.phase === 'ROUND_1') {
+                setRoundOverlay({ title: 'ROUND 1', subtitle: '4 Players Remain • 90 Seconds' });
+                setTimeout(() => setRoundOverlay(null), 5000); // 5s overlay
+            } else if (gameState.phase === 'ROUND_2') {
+                setRoundOverlay({ title: 'ROUND 2', subtitle: '3 Players Remain • 90 Seconds' });
+                setTimeout(() => setRoundOverlay(null), 4000);
+            } else if (gameState.phase === 'ROUND_3') {
+                setRoundOverlay({ title: 'FINAL ROUND', subtitle: 'The President Returns' });
+                setTimeout(() => setRoundOverlay(null), 4000);
+            }
+            prevPhaseRef.current = gameState.phase;
         }
     }, [gameState.eliminatedPlayers, gameState.phase]);
 
@@ -120,9 +141,227 @@ const GameRoom = () => {
         );
     }
 
-    if (gameState.phase === 'LOBBY') {
+
+    if (showAbout) {
         return (
-            <div className="relative flex items-center justify-center h-screen bg-black text-white overflow-hidden">
+            <div className="relative min-h-screen bg-black text-white overflow-x-hidden overflow-y-auto">
+                {/* Dark Grim Background */}
+                <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950" />
+
+                {/* ASCII Art Background - Large Scale */}
+                <div className="absolute inset-0 opacity-[0.03] font-mono text-xs leading-none pointer-events-none overflow-hidden select-none whitespace-pre" style={{
+                    textShadow: '0 0 2px rgba(255,255,255,0.1)'
+                }}>
+                    {`
+    ██████╗ ███████╗██╗   ██╗███████╗██████╗ ███████╗███████╗    ████████╗██╗   ██╗██████╗ ██╗███╗   ██╗ ██████╗
+    ██╔══██╗██╔════╝██║   ██║██╔════╝██╔══██╗██╔════╝██╔════╝    ╚══██╔══╝██║   ██║██╔══██╗██║████╗  ██║██╔════╝
+    ██████╔╝█████╗  ██║   ██║█████╗  ██████╔╝███████╗█████╗         ██║   ██║   ██║██████╔╝██║██╔██╗ ██║██║  ███╗
+    ██╔══██╗██╔══╝  ╚██╗ ██╔╝██╔══╝  ██╔══██╗╚════██║██╔══╝         ██║   ██║   ██║██╔══██╗██║██║╚██╗██║██║   ██║
+    ██║  ██║███████╗ ╚████╔╝ ███████╗██║  ██║███████║███████╗       ██║   ╚██████╔╝██║  ██║██║██║ ╚████║╚██████╔╝
+    ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝       ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝
+
+         ████████╗███████╗███████╗████████╗    ╔═══════════════════════════════════════════════════════════╗
+         ╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝    ║  HUMAN vs AI • REAL-TIME CONVERSATION • PROVE YOUR WORTH ║
+            ██║   █████╗  ███████╗   ██║       ╚═══════════════════════════════════════════════════════════╝
+            ██║   ██╔══╝  ╚════██║   ██║       ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+            ██║   ███████╗███████║   ██║       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+            ╚═╝   ╚══════╝╚══════╝   ╚═╝       ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+
+    ╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+    ║  01001000 01010101 01001101 01000001 01001110  •  01000001 01001001  •  01010100 01000101 01010011  ║
+    ╚══════════════════════════════════════════════════════════════════════════════════════════════════════╝
+
+    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+    ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+    `}
+                </div>
+
+                {/* CSS-based Noise Texture */}
+                <div className="absolute inset-0 opacity-30" style={{
+                    background: `
+                        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.015) 2px, rgba(255,255,255,0.015) 4px),
+                        repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.02) 2px, rgba(0,0,0,0.02) 4px)
+                    `
+                }} />
+
+                {/* Dense Grid Pattern */}
+                <div className="absolute inset-0 opacity-20" style={{
+                    backgroundImage: `
+                        linear-gradient(rgba(100, 100, 100, 0.05) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(100, 100, 100, 0.05) 1px, transparent 1px)
+                    `,
+                    backgroundSize: '24px 24px'
+                }} />
+
+                {/* Heavy Vignette */}
+                <div className="absolute inset-0" style={{
+                    background: 'radial-gradient(ellipse at center, transparent 0%, transparent 40%, rgba(0,0,0,0.5) 80%, rgba(0,0,0,0.8) 100%)'
+                }} />
+
+                <div className="relative z-10 w-full max-w-4xl mx-auto px-4 sm:px-6 md:px-8 py-16">
+                    {/* Back Button - Top */}
+                    <button
+                        onClick={() => setShowAbout(false)}
+                        className="mb-8 text-amber-200 hover:text-amber-100 transition-colors text-sm"
+                    >
+                        ← Back to Lobby
+                    </button>
+
+                    {/* Title */}
+                    <div className="mb-12 text-center">
+                        <h1 className="text-4xl sm:text-5xl font-black mb-4 text-amber-50 opacity-90" style={{
+                            textShadow: '0 2px 20px rgba(0,0,0,0.8)'
+                        }}>
+                            About This Game
+                        </h1>
+                        <div className="h-px w-48 sm:w-64 mx-auto bg-gradient-to-r from-transparent via-slate-500 to-transparent opacity-50" />
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="space-y-8 text-slate-300">
+                        <section className="space-y-4 leading-relaxed text-lg">
+                            <p>A few companies are racing to build AI smarter than humans.</p>
+                            <p>We see lines on a graph. We see numbers reported by magazines.</p>
+                            <p className="italic">We rarely feel it. We rarely feel what it means to have your humanness matched by a machine.</p>
+                            <p>I want people to know what's at stake when we talk about handing our future over to AI. Not from a conceptual, rational position, but from an emotional, lived experience perspective.</p>
+                            <p>In <span className="font-semibold">Reverse Turing Test</span>, you compete with AIs the way we're all poised to do in the future. You join a call with 3 seperate AIs. Everyone claims they're the real human. You have to convince them it's you.</p>
+                        </section>
+
+                        <div className="h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent my-12" />
+
+                        {/* The Risks Section */}
+                        <section>
+                            <h2 className="text-3xl font-bold text-amber-200 mb-6">The Risks We're Racing Toward</h2>
+                            <p>Given what is at stake. It is on us to understand the risks and harms we are facing. Outlined below are 8 types of AI harm that might influence the future of humanity</p>
+                            <AIHarmsInfographic />
+                            <br></br>
+                            <p>The original infographic was first published here: <a href="https://aisfounders.com/harms" className="text-amber-200 hover:text-amber-100 underline">AI Safety Founders - Harms</a></p>
+                            <p>Also read more about <a href="https://keepthefuturehuman.ai" className="text-amber-200 hover:text-amber-100 underline">Keep The Future Human</a></p>
+                            
+                        </section>
+
+                        <div className="h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent my-12" />
+
+                        {/* FAQ Section */}
+                        <section>
+                            <h2 className="text-3xl font-bold text-amber-200 mb-6">FAQ</h2>
+                            <div className="space-y-4">
+                                <details className="bg-black/40 border border-slate-700 rounded-lg p-6 group">
+                                    <summary className="font-bold text-amber-100 cursor-pointer list-none flex items-center justify-between">
+                                        <span>How do I play?</span>
+                                        <span className="text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+                                    </summary>
+                                    <div className="mt-4 space-y-3 text-slate-300">
+                                        <p>The game has three rounds:</p>
+                                        <p><strong className="text-amber-100">Round 1 - Questions:</strong> The Moderator (Dwarkesh Patel) asks each player a question about being human. You and three AI characters take turns answering.</p>
+                                        <p><strong className="text-amber-100">Round 2 - Discussion:</strong> Free-form debate. Anyone can speak. AIs will ask you questions and respond to each other.</p>
+                                        <p><strong className="text-amber-100">Round 3 - Voting:</strong> Everyone votes on who they think is the real human. Most votes wins.</p>
+                                        <p className="italic">Each AI character is powered by a separate instance of Gemini 2.0 Flash with distinct personalities and instructions. They don't know you're the human—they genuinely believe they might be.</p>
+                                    </div>
+                                </details>
+
+                                <details className="bg-black/40 border border-slate-700 rounded-lg p-6 group">
+                                    <summary className="font-bold text-amber-100 cursor-pointer list-none flex items-center justify-between">
+                                        <span>How did you build this?</span>
+                                        <span className="text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+                                    </summary>
+                                    <div className="mt-4 space-y-3 text-slate-300">
+                                        <p>The game runs on:</p>
+                                        <ul className="list-disc list-inside space-y-1 ml-4">
+                                            <li><strong className="text-amber-100">Frontend:</strong> React + Vite + Tailwind CSS</li>
+                                            <li><strong className="text-amber-100">Backend:</strong> Node.js + Express + WebSocket</li>
+                                            <li><strong className="text-amber-100">AI:</strong> Google Gemini API (gemini-2.0-flash) - each character is a separate API instance</li>
+                                            <li><strong className="text-amber-100">Voice:</strong> ElevenLabs TTS for AI speech</li>
+                                        </ul>
+                                        <p className="mt-4">Technical approach:</p>
+                                        <ul className="list-disc list-inside space-y-1 ml-4">
+                                            <li>Message queue system prevents simultaneous AI responses</li>
+                                            <li>Each AI maintains conversation context through a rolling message window</li>
+                                            <li>Turn management detects when you're being asked a question directly</li>
+                                            <li>All voices have telephone audio processing for consistent quality</li>
+                                        </ul>
+                                        <p className="mt-4 italic">Full code is open source on GitHub.</p>
+                                    </div>
+                                </details>
+
+                                <details className="bg-black/40 border border-slate-700 rounded-lg p-6 group">
+                                    <summary className="font-bold text-amber-100 cursor-pointer list-none flex items-center justify-between">
+                                        <span>Where can I learn more about AI safety?</span>
+                                        <span className="text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+                                    </summary>
+                                    <div className="mt-4 space-y-4 text-slate-300">
+                                        <div>
+                                            <p className="font-semibold text-amber-100 mb-2">Essays & Resources:</p>
+                                            <ul className="list-disc list-inside space-y-1 ml-4">
+                                                <li><strong>Keep The Future Human</strong> by Anthony Aguirre - the essay that inspired this game</li>
+                                                <li><strong>My post on AI harms</strong> - catalog of risks we're already seeing</li>
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-amber-100 mb-2">Creators to follow:</p>
+                                            <ul className="list-disc list-inside space-y-1 ml-4">
+                                                <li><strong>Rob Miles</strong> - Clear explanations of AI alignment problems</li>
+                                                <li><strong>Rational Animations</strong> - Animated deep dives on AI risk</li>
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-amber-100 mb-2">Get involved:</p>
+                                            <ul className="list-disc list-inside space-y-1 ml-4">
+                                                <li><strong>AI Safety Founders</strong> - Community of 300+ people building in AI safety (I'm a cofounder)</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </details>
+
+                                <details className="bg-black/40 border border-slate-700 rounded-lg p-6 group">
+                                    <summary className="font-bold text-amber-100 cursor-pointer list-none flex items-center justify-between">
+                                        <span>Can I share this game?</span>
+                                        <span className="text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+                                    </summary>
+                                    <div className="mt-4 space-y-2 text-slate-300">
+                                        <p>Yes! Please share it. The whole point is getting people to experience current AI capabilities firsthand.</p>
+                                        <p><strong className="text-amber-100">Link:</strong> <a href="https://beepbooptest.com" className="text-amber-200 hover:text-amber-100 underline">beepbooptest.com</a></p>
+                                    </div>
+                                </details>
+                            </div>
+                        </section>
+
+                        <div className="h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent my-12" />
+
+                        {/* Contact Section */}
+                        <section>
+                            <h2 className="text-3xl font-bold text-amber-200 mb-6">Contact</h2>
+                            <div className="space-y-2 text-slate-300">
+                                <p>Questions, feedback, or want to discuss AI safety?</p>
+                                <p><strong className="text-amber-100">Email:</strong> <a href="mailto:contact@beepbooptest.com" className="text-amber-200 hover:text-amber-100 underline">contact@beepbooptest.com</a></p>
+                                <p><strong className="text-amber-100">LinkedIn:</strong> <a href="https://linkedin.com/in/finn-metz" className="text-amber-200 hover:text-amber-100 underline">Finn Metz</a></p>
+                            </div>
+                        </section>
+                    </div>
+
+                    {/* Back Button - Bottom */}
+                    <button
+                        onClick={() => setShowAbout(false)}
+                        className="mt-16 w-full sm:w-auto px-12 py-4 text-lg font-semibold bg-slate-800/80 hover:bg-slate-700/90 text-amber-100 border-2 border-slate-700 hover:border-amber-200/30 rounded-xl transition-all duration-200 shadow-xl backdrop-blur-sm"
+                    >
+                        ← Back to Lobby
+                    </button>
+
+                    {/* Subtle Flicker Effect */}
+                    <div className="absolute inset-0 pointer-events-none animate-pulse opacity-[0.01]" style={{
+                        animationDuration: '8s',
+                        background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.03) 0%, transparent 60%)'
+                    }} />
+                </div>
+            </div>
+        );
+    }
+
+    if (gameState.phase === 'LOBBY') {
+
+        return (
+            <div className="relative flex items-center justify-center min-h-screen h-screen bg-black text-white overflow-x-hidden overflow-y-auto">
                 {/* Dark Grim Background */}
                 <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950" />
 
@@ -159,41 +398,96 @@ const GameRoom = () => {
                     background: 'radial-gradient(ellipse at center, transparent 0%, transparent 40%, rgba(0,0,0,0.5) 80%, rgba(0,0,0,0.8) 100%)'
                 }} />
 
-                <div className="relative z-10 text-center max-w-3xl px-8">
+                <div className="relative z-10 text-center w-full max-w-3xl px-4 sm:px-6 md:px-8 py-8 pt-32">
                     {/* Grim Title */}
-                    <div className="mb-10">
-                        <h1 className="text-7xl font-black mb-6 tracking-tight text-amber-50 opacity-90" style={{
+                    <div className="mb-6 md:mb-8">
+                        <h1 className="text-3xl sm:text-4xl md:text-5xl font-black mb-3 md:mb-4 text-amber-50 opacity-90 leading-tight flex flex-wrap justify-center gap-x-3" style={{
                             textShadow: '0 2px 20px rgba(0,0,0,0.8)'
                         }}>
-                            REVERSE TURING TEST
+                            {['REVERSE', 'TURING', 'TEST'].map((word, wordIndex) => (
+                                <span key={wordIndex} className="inline-flex">
+                                    {word.split('').map((char, charIndex) => (
+                                        <span
+                                            key={charIndex}
+                                            className="inline-block transition-all duration-200 hover:scale-125 hover:text-amber-200"
+                                        >
+                                            {char}
+                                        </span>
+                                    ))}
+                                </span>
+                            ))}
                         </h1>
-                        <div className="h-px w-64 mx-auto bg-gradient-to-r from-transparent via-slate-500 to-transparent opacity-50" />
+                        <div className="h-px w-48 sm:w-64 mx-auto bg-gradient-to-r from-transparent via-slate-500 to-transparent opacity-50" />
                     </div>
 
                     {/* Subtitle Card */}
-                    <div className="mb-12 bg-black/60 border border-slate-800 rounded-xl p-8 shadow-2xl backdrop-blur-sm">
-                        <p className="text-2xl font-light leading-relaxed mb-3 text-amber-50">
+                    <div className="mb-8 md:mb-12 bg-black/60 border border-slate-800 rounded-xl p-4 sm:p-6 md:p-8 shadow-2xl backdrop-blur-sm">
+                        <p className="text-lg sm:text-xl md:text-2xl font-light leading-relaxed mb-3 text-amber-50">
                             You are in a simulation.
                         </p>
-                        <p className="text-lg text-slate-300 mb-2">
-                            3 AIs are trying to prove they are human.
+                        <p className="text-base sm:text-lg text-slate-300 mb-2">
+                            You are joining a phone call with 3 AIs trying to prove they are human.
                         </p>
-                        <p className="text-lg text-slate-300">
-                            <span className="text-amber-200 font-semibold">You</span> are the only real human. Convince them. Save the world.
+                        <p className="text-base sm:text-lg text-slate-300">
+                            <span className="text-amber-200 font-semibold">Convince them that you are the only real human and keep the matrix from collapsing!</span>
                         </p>
-                        <div className="mt-6 pt-6 border-t border-slate-700/50">
-                            <p className="text-sm text-slate-400 italic">
-                                Note: Each AI is a separate instance. They genuinely do not know who the human is and are trying their best to identify you.
+                        <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-slate-700/50">
+                            <p className="text-xs sm:text-sm text-slate-400 italic">
+                                Each player in this call is a separate AI not knowing who the real human is. They are instructed to be skeptical and figure out the truth.
                             </p>
                         </div>
                     </div>
 
+                    {/* About Link */}
+                    <div className="mb-8 flex justify-center">
+                        <button
+                            onClick={() => setShowAbout(true)}
+                            className="text-amber-200 hover:text-amber-100 underline text-base sm:text-lg transition-colors"
+                        >
+                            About the Game
+                        </button>
+                    </div>
+
+                    {/* Avatar Selection */}
+                    <div className="mb-8">
+                        <p className="text-center text-sm text-slate-400 mb-4">Choose your avatar</p>
+                        <div className="flex justify-center gap-6">
+                            <div
+                                onClick={() => setUserAvatar('/images/characters/User/User_Male.jpg')}
+                                className={`cursor-pointer transition-all ${userAvatar === '/images/characters/User/User_Male.jpg'
+                                        ? 'ring-4 ring-amber-200 scale-110'
+                                        : 'ring-2 ring-slate-700 hover:ring-slate-500'
+                                    } rounded-full`}
+                            >
+                                <img
+                                    src="/images/characters/User/User_Male.jpg"
+                                    alt="Male avatar"
+                                    className="w-20 h-20 rounded-full object-cover"
+                                    style={{ objectPosition: '58% 58%' }}
+                                />
+                            </div>
+                            <div
+                                onClick={() => setUserAvatar('/images/characters/User/User_Female.jpg')}
+                                className={`cursor-pointer transition-all ${userAvatar === '/images/characters/User/User_Female.jpg'
+                                        ? 'ring-4 ring-amber-200 scale-110'
+                                        : 'ring-2 ring-slate-700 hover:ring-slate-500'
+                                    } rounded-full`}
+                            >
+                                <img
+                                    src="/images/characters/User/User_Female.jpg"
+                                    alt="Female avatar"
+                                    className="w-20 h-20 rounded-full object-cover"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Input Field */}
-                    <div className="mb-10">
+                    <div className="mb-8 md:mb-10">
                         <input
                             type="text"
                             placeholder="Enter your name..."
-                            className="w-full max-w-md px-8 py-4 text-xl text-center
+                            className="w-full max-w-md px-6 sm:px-8 py-3 sm:py-4 text-lg sm:text-xl text-center
                                      bg-black/40 border-2 border-slate-700 rounded-xl
                                      text-amber-50 placeholder-slate-600
                                      focus:outline-none focus:border-amber-200/40 focus:bg-black/60
@@ -203,7 +497,7 @@ const GameRoom = () => {
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && inputText.trim()) {
                                     startGame(inputText);
-                                    setInputText(''); // Clear input after starting game
+                                    setInputText('');
                                 }
                             }}
                             autoFocus
@@ -214,12 +508,12 @@ const GameRoom = () => {
                     <button
                         onClick={() => {
                             startGame(inputText);
-                            setInputText(''); // Clear input after starting game
+                            setInputText('');
                         }}
-                        disabled={!inputText.trim()}
-                        className={`px-12 py-4 text-xl font-semibold
+                        disabled={!inputText.trim() || !userAvatar}
+                        className={`px-8 sm:px-12 py-3 sm:py-4 text-lg sm:text-xl font-semibold
                                    rounded-xl transition-all duration-200 shadow-xl backdrop-blur-sm
-                                   ${inputText.trim()
+                                   ${(inputText.trim() && userAvatar)
                                 ? 'bg-slate-800/80 hover:bg-slate-700/90 text-amber-100 border-2 border-slate-700 hover:border-amber-200/30'
                                 : 'bg-black/40 text-slate-700 cursor-not-allowed border-2 border-slate-800'
                             }`}
@@ -339,9 +633,10 @@ const GameRoom = () => {
                         <VideoGrid
                             players={gameState.players}
                             activeSpeaker={gameState.activeSpeaker}
-                            connectedPlayers={Object.keys(gameState.players)}
+                            connectedPlayers={gameState.connectedPlayers || []}
                             waitingForUserResponse={gameState.awaitingHumanResponse}
                             isSpeaking={isSpeaking}
+                            userAvatar={userAvatar}
                         />
                     </div>
 
@@ -403,21 +698,21 @@ const GameRoom = () => {
 
                                 {/* Chat Input */}
                                 <div className="p-3 border-t border-slate-700">
-                                    <form onSubmit={handleSend} className="flex gap-2">
+                                    <form onSubmit={handleSend} className="flex gap-2 items-center w-full">
                                         <input
                                             type="text"
                                             value={inputText}
                                             onChange={(e) => handleInputChange(e.target.value)}
                                             placeholder="Type a message..."
-                                            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white
+                                            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white
                                                      placeholder-slate-500 focus:outline-none focus:border-amber-200/50
-                                                     transition-all duration-200 text-sm"
+                                                     transition-all duration-200 text-sm min-w-0"
                                             autoFocus
                                         />
                                         <button
                                             type="submit"
-                                            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg font-semibold
-                                                     transition-all duration-200 text-sm text-amber-100 border border-slate-600"
+                                            className="bg-slate-700 hover:bg-slate-600 px-6 py-3 rounded-lg font-semibold
+                                                     transition-all duration-200 text-sm text-amber-100 border border-slate-600 whitespace-nowrap shadow-lg"
                                         >
                                             Send
                                         </button>
@@ -485,6 +780,20 @@ const GameRoom = () => {
 
             {/* President Overlay */}
             {gameState.phase === 'PRESIDENT_INTRO' && !showModeSelection && <PresidentOverlay />}
+
+            {/* Round Transition Overlay */}
+            {roundOverlay && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-500">
+                    <div className="text-center">
+                        <h1 className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-amber-100 via-amber-300 to-amber-500 mb-4 tracking-tighter drop-shadow-[0_0_15px_rgba(245,158,11,0.5)] animate-in zoom-in duration-700">
+                            {roundOverlay.title}
+                        </h1>
+                        <p className="text-2xl text-slate-300 font-light tracking-widest uppercase animate-in slide-in-from-bottom-10 duration-700 delay-200">
+                            {roundOverlay.subtitle}
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Mode Selection Modal */}
             {showModeSelection && (

@@ -86,7 +86,13 @@ export class GameOrchestrator {
       // Initialize player sessions
       const playerIds = ['player2', 'player3', 'player4'];
       for (const playerId of playerIds) {
-        const prompt = getPlayerPrompt(playerId, false);
+        const prompt = getPlayerPrompt(
+          playerId,
+          false,
+          'Player 1', // Default name
+          [], // No eliminated players at start
+          this.moderatorController.players.player1.communicationMode || 'voice'
+        );
         const playerName = this.moderatorController.players[playerId].name;
 
         await this.geminiLiveService.initializeSession(
@@ -162,7 +168,13 @@ export class GameOrchestrator {
     console.log(`👑 [GameOrchestrator] Updating ${secretModId} with Secret Moderator role`);
 
     // Get updated prompt with Secret Moderator instructions
-    const updatedPrompt = getPlayerPrompt(secretModId, true);
+    const updatedPrompt = getPlayerPrompt(
+      secretModId,
+      true,
+      this.moderatorController.players.player1.name,
+      Array.from(this.moderatorController.eliminatedPlayers),
+      this.moderatorController.players.player1.communicationMode || 'voice'
+    );
 
     // Note: We can't dynamically update system prompts in existing sessions
     // Instead, we'll send a context message to the Secret Moderator

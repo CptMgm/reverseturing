@@ -1,6 +1,6 @@
 import React from 'react';
 
-const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUserResponse = false, isSpeaking = false }) => {
+const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUserResponse = false, isSpeaking = false, userAvatar = null }) => {
     // Track previous connected players to trigger SFX
     const prevConnectedRef = React.useRef(connectedPlayers.length);
 
@@ -31,21 +31,25 @@ const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUs
 
     // Helper to get image path
     const getImagePath = (id) => {
-        // User confirmed: 'player 1' folder contains Wario (who is player2 in code)
-        // So we shift the mapping by 1.
+        // Map player IDs to their character folders
         const folderMap = {
-            'player1': 'player 4', // Assuming player 4 folder is for human? Or maybe just use a default. User said "player1 folder is wario".
-            // Let's map based on user's "off by one" comment.
-            // Wario (player2) -> 'player 1'
-            // Domis (player3) -> 'player 2'
-            // Scan (player4) -> 'player 3'
-            // Human (player1) -> 'player 4'? (Or just don't show image as per previous request)
-            'player2': 'player 1',
-            'player3': 'player 2',
-            'player4': 'player 3',
-            'moderator': 'moderator'
+            'player2': 'player 1', // Wario
+            'player3': 'player 2', // Domis
+            'player4': 'player 3', // Scan
+            'moderator': 'moderator' // President Dorkesh
         };
-        return `/images/characters/${folderMap[id]}/image.png`;
+
+        const imageMap = {
+            'player2': 'Wario_Wooden.jpg',
+            'player3': 'Domis_Wooden.jpg',
+            'player4': 'Scan_Wooden.jpg',
+            'moderator': 'Dorkesh_Wooden.jpg'
+        };
+
+        const folder = folderMap[id];
+        const imageName = imageMap[id];
+
+        return `/images/characters/${folder}/${imageName}`;
     };
 
     return (
@@ -88,10 +92,26 @@ const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUs
                                         }}
                                     />
                                 )}
-                                {/* Fallback if image fails or if it's me */}
-                                <div className={`${!isMe ? 'hidden' : ''} text-6xl font-bold absolute`}>
-                                    {isPresident ? '🏛️' : player.name.charAt(0)}
-                                </div>
+                                {/* Show user's uploaded avatar or fallback */}
+                                {isMe && userAvatar && (
+                                    <img
+                                        src={userAvatar}
+                                        alt={player.name}
+                                        className="w-full h-full object-cover opacity-80"
+                                    />
+                                )}
+                                {/* Fallback if image fails or if it's me without avatar */}
+                                {isMe && !userAvatar && (
+                                    <div className="text-6xl font-bold">
+                                        {player.name.charAt(0)}
+                                    </div>
+                                )}
+                                {/* Fallback for AI players if image fails */}
+                                {!isMe && (
+                                    <div className="hidden text-6xl font-bold">
+                                        {isPresident ? '🏛️' : player.name.charAt(0)}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Name Tag */}

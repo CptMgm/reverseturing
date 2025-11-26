@@ -112,6 +112,9 @@ export const GameProvider = ({ children }) => {
       isPlayingRef.current = false;
       setGameState(prev => ({ ...prev, activeSpeaker: null }));
       URL.revokeObjectURL(audio.src);
+
+      // CRITICAL FIX: Send AUDIO_COMPLETE to server
+      finishAudio(payload.playerId);
     };
   };
 
@@ -281,11 +284,30 @@ export const GameProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    // Connect to WebSocket
-    // Hardcoded to localhost:3001 for development as backend runs on a different port than frontend
-    const wsUrl = 'ws://localhost:3001';
+    // Connect to WebSocket with authentication
+    // Determine WebSocket URL based on environment
+    const getWebSocketUrl = () => {
+      // Check if we're in production (Lovable frontend)
+      const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
 
-    console.log('🔌 Connecting to WebSocket:', wsUrl);
+      // Use environment variable if available, otherwise detect
+      const backendUrl = import.meta.env.VITE_BACKEND_URL ||
+        (isProduction ? 'wss://your-backend-url.run.app' : 'ws://localhost:3001');
+
+      // Get auth token from localStorage
+      const authToken = localStorage.getItem('gameAuthToken');
+
+      // Add token as query parameter if it exists
+      if (authToken) {
+        return `${backendUrl}?token=${authToken}`;
+      }
+
+      return backendUrl;
+    };
+
+    const wsUrl = getWebSocketUrl();
+
+    console.log('🔌 Connecting to WebSocket:', wsUrl.replace(/token=[^&]+/, 'token=***'));
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -349,9 +371,17 @@ export const GameProvider = ({ children }) => {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       console.log('❌ WebSocket Disconnected');
       setIsConnected(false);
+
+      // Check if connection was closed due to authentication failure
+      if (event.code === 4401) {
+        console.error('🔒 Authentication failed - invalid or missing token');
+        setSystemError('Authentication failed. Please refresh and enter the password again.');
+        // Clear invalid token
+        localStorage.removeItem('gameAuthToken');
+      }
     };
 
     return () => {
@@ -442,12 +472,14 @@ export const GameProvider = ({ children }) => {
       // Update active speaker in UI
       setGameState(prev => ({ ...prev, activeSpeaker: item.playerId }));
 
-      console.log(`🔍 [Client] Audio data present: ${!!item.audioData}, Length: ${item.audioData?.length || 0}`);
+      console.log(`🔍 [Client] Audio data present: ${!!item.audioData}, Length: ${item.audioData?.length || 0}, ContentType: ${item.contentType || 'not specified'}`);
 
       if (item.audioData && item.audioData.length > 100) { // Basic validation
         // Play server-provided audio with phone call effect
-        // Use audio/mpeg for MP3 data from ElevenLabs
-        const audio = new Audio(`data:audio/mpeg;base64,${item.audioData}`);
+        // Use dynamic content type (wav for Gemini, mpeg for ElevenLabs)
+        const mimeType = item.contentType || 'audio/mpeg';
+        console.log(`🎵 [Client] Creating audio with MIME type: ${mimeType}`);
+        const audio = new Audio(`data:${mimeType};base64,${item.audioData}`);
         audio.volume = 1.0; // Max volume
 
         // Wait for audio to load before playing
@@ -455,8 +487,13 @@ export const GameProvider = ({ children }) => {
           console.log(`📊 [Client] Audio loaded - Duration: ${audio.duration}s, Volume: ${audio.volume}`);
         });
 
+        audio.addEventListener('error', (e) => {
+          console.error(`❌ [Client] Audio element error:`, e, audio.error);
+        });
+
         // TEMPORARILY DISABLE PHONE EFFECT TO DEBUG
-        const ENABLE_PHONE_EFFECT = true; // Enabled for all AI players
+        // Phone effect causes issues with Web Audio API - needs debugging
+        const ENABLE_PHONE_EFFECT = false; // TODO: Fix Web Audio API phone effect
 
         if (ENABLE_PHONE_EFFECT) {
           try {
@@ -465,9 +502,12 @@ export const GameProvider = ({ children }) => {
 
             // Resume context if suspended (fixes "first syllable cut-off")
             if (audioContext.state === 'suspended') {
+              console.log(`🔊 [Client] Resuming AudioContext (was ${audioContext.state})`);
               await audioContext.resume();
+              console.log(`✅ [Client] AudioContext resumed (now ${audioContext.state})`);
             }
 
+            console.log(`🎚️ [Client] Creating MediaElementSource for ${item.playerId}`);
             const source = audioContext.createMediaElementSource(audio);
 
             // Create bandpass filter for phone call effect (300Hz - 3400Hz)
@@ -507,6 +547,7 @@ export const GameProvider = ({ children }) => {
           }
         } else {
           console.log(`🎵 [Client] Playing audio WITHOUT phone effect for ${item.playerId}`);
+          console.log(`🔊 [Client] Audio element state - readyState: ${audio.readyState}, paused: ${audio.paused}, muted: ${audio.muted}`);
         }
 
         // Handle playback errors (e.g. Autoplay blocked)

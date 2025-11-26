@@ -10,8 +10,9 @@ node_modules/
 .env.local
 .env.production
 
-# Logs
+# Logs and cache
 logs/
+cache/
 *.log
 npm-debug.log*
 

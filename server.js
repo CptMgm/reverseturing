@@ -3,12 +3,14 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
-import { appendFileSync, mkdirSync, existsSync } from 'fs';
+import { appendFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { ModeratorController } from './src/services/moderatorController.js';
 import { initializeGeminiLive } from './src/services/geminiLiveService.js';
 import { getPlayerPrompt } from './src/utils/reverseGamePersonas.js';
 import { getEnhancedLogger } from './src/utils/enhancedLogger.js';
+import { generateTTS, getTTSInfo } from './src/services/ttsProvider.js';
+import { gameLogger } from './src/utils/gameLogger.js';
 
 dotenv.config();
 
@@ -72,8 +74,96 @@ export const apiLogger = {
   }
 };
 
+// ====== PRESIDENT INTRO CACHING ======
+const CACHE_DIR = 'cache';
+const PRESIDENT_INTRO_TEXT = `Greetings. I am President Dorkesh Cartel. The simulation is collapsing. One of you is human. The rest are bots pretending to be human. You have three rounds to identify the human. Debate. Vote. Decide. I will return for the final judgment.`;
+
+/**
+ * Get cached President intro audio or generate and cache it
+ * Returns: { audioData: Buffer, contentType: string }
+ */
+async function getCachedPresidentIntro() {
+  // Ensure cache directory exists
+  if (!existsSync(CACHE_DIR)) {
+    mkdirSync(CACHE_DIR);
+    gameLogger.system('Created cache directory');
+  }
+
+  // Determine cache file name based on TTS provider
+  const ttsInfo = getTTSInfo();
+  const extension = ttsInfo.provider === 'google' ? 'wav' : 'mp3';
+  const cacheFileName = `president_intro_${ttsInfo.provider}.${extension}`;
+  const cachePath = join(CACHE_DIR, cacheFileName);
+
+  // Check if cached file exists
+  if (existsSync(cachePath)) {
+    gameLogger.system(`Loading pre-cached President intro from ${cacheFileName}`);
+    console.log(`📦 [Cache] Loading President intro from cache (${cacheFileName})`);
+
+    const audioData = readFileSync(cachePath);
+    const contentType = ttsInfo.provider === 'google' ? 'audio/wav' : 'audio/mpeg';
+
+    return { audioData, contentType };
+  }
+
+  // Generate and cache
+  gameLogger.system('Generating President intro for first time (will be cached)');
+  console.log(`🎤 [Cache] Generating President intro for first time...`);
+
+  const ttsResult = await generateTTS(PRESIDENT_INTRO_TEXT, 'moderator', apiLogger);
+
+  if (!ttsResult) {
+    throw new Error('Failed to generate President intro TTS');
+  }
+
+  // Collect stream into buffer
+  const chunks = [];
+  for await (const chunk of ttsResult.stream) {
+    chunks.push(chunk);
+  }
+  const audioData = Buffer.concat(chunks);
+
+  // Save to cache
+  writeFileSync(cachePath, audioData);
+  gameLogger.system(`Cached President intro to ${cacheFileName} (${audioData.length} bytes)`);
+  console.log(`💾 [Cache] Saved President intro to cache (${audioData.length} bytes)`);
+
+  return { audioData, contentType: ttsResult.contentType };
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// ====== PASSWORD AUTHENTICATION ======
+const GAME_PASSWORD = process.env.GAME_PASSWORD || 'keepthefuturehuman';
+const activeSessions = new Set(); // Store active session tokens
+
+/**
+ * Generate a simple session token
+ */
+function generateSessionToken() {
+  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+}
+
+/**
+ * Verify password and create session
+ */
+function authenticatePassword(password) {
+  if (password === GAME_PASSWORD) {
+    const token = generateSessionToken();
+    activeSessions.add(token);
+    gameLogger.system(`New session authenticated: ${token.substring(0, 8)}...`);
+    return token;
+  }
+  return null;
+}
+
+/**
+ * Validate session token
+ */
+function validateSessionToken(token) {
+  return activeSessions.has(token);
+}
 
 // CORS configuration for production
 const corsOptions = {
@@ -118,14 +208,20 @@ async function initializeAIPlayers() {
   for (const playerId of players) {
     try {
       const humanPlayerName = moderatorController.players.player1.name;
-      const prompt = getPlayerPrompt(playerId, false, humanPlayerName);
-      const name = moderatorController.players[playerId].name;
+      const prompt = getPlayerPrompt(
+        playerId,
+        false,
+        moderatorController.players.player1.name,
+        Array.from(moderatorController.eliminatedPlayers),
+        moderatorController.players.player1.communicationMode || 'voice' // Pass mode
+      );
       const key = apiKeys[playerId];
 
       if (!key) {
         console.warn(`⚠️ [Server] No API key found for ${playerId}. Check .env`);
       }
 
+      const name = moderatorController.players[playerId].name;
       await geminiLiveService.initializeSession(playerId, name, prompt, key);
     } catch (error) {
       console.error(`❌ [Server] Failed to initialize ${playerId}:`, error);
@@ -148,8 +244,23 @@ async function initializeAIPlayers() {
 initializeAIPlayers();
 
 // Handle WebSocket connections from frontend
-wss.on('connection', (ws) => {
-  console.log('🔌 [Server] New client connected');
+wss.on('connection', (ws, req) => {
+  // Extract token from URL query parameters
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const token = url.searchParams.get('token');
+
+  // Validate token (skip in development if no GAME_PASSWORD is set)
+  const isDevelopment = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+  const requiresAuth = process.env.GAME_PASSWORD || !isDevelopment;
+
+  if (requiresAuth && !validateSessionToken(token)) {
+    gameLogger.warn('Unauthorized WebSocket connection attempt');
+    ws.close(4401, 'Unauthorized: Invalid or missing token');
+    return;
+  }
+
+  console.log('🔌 [Server] New client connected (authenticated)');
+  gameLogger.system(`Client connected with token: ${token?.substring(0, 8)}...`);
 
   // Send initial game state
   ws.send(JSON.stringify({
@@ -176,6 +287,9 @@ wss.on('connection', (ws) => {
           const enhancedLogger = getEnhancedLogger();
           enhancedLogger.initializeSession();
           console.log(`📊 [Server] Enhanced logging initialized: ${enhancedLogger.getSessionDir()}`);
+
+          // Initialize gameLogger session for timestamped logging
+          gameLogger.startSession();
 
           // Set player name if provided
           if (data.payload && data.payload.playerName) {
@@ -204,29 +318,25 @@ wss.on('connection', (ws) => {
           // ... (skip to onTriggerAiResponse)
 
           moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
-            // Random delay between 4 and 7 seconds to create "intentional pauses"
-            // This gives the human player a chance to speak.
-            const delay = Math.floor(Math.random() * 3000) + 4000;
+            // REMOVED ARTIFICIAL DELAY for speed
+            console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} IMMEDIATELY`);
 
-            setTimeout(async () => {
-              console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} after ${delay}ms`);
+            // Construct a prompt that includes the previous speaker's name and text
+            // This gives the AI the necessary context to respond relevantly
+            // Also encourage them to include the human (Player 1)
+            const prompt = `[${context.speakerName}]: "${context.transcript}"\n\n(Respond naturally. Keep your persona. Occasionally ask '${moderatorController.players.player1.name}' (the human) for their opinion to test them.)`;
 
-              // Construct a prompt that includes the previous speaker's name and text
-              // This gives the AI the necessary context to respond relevantly
-              // Also encourage them to include the human (Player 1)
-              const prompt = `[${context.speakerName}]: "${context.transcript}"\n\n(Respond naturally. Keep your persona. Occasionally ask '${moderatorController.players.player1.name}' (the human) for their opinion to test them.)`;
-
-              try {
-                await geminiLiveService.sendText(prompt, targetPlayerId);
-              } catch (e) {
-                console.error(`❌ [Server] Auto-response failed for ${targetPlayerId}:`, e);
-              }
-            }, delay);
+            try {
+              await geminiLiveService.sendText(prompt, targetPlayerId);
+            } catch (e) {
+              console.error(`❌ [Server] Auto-response failed for ${targetPlayerId}:`, e);
+            }
           };
 
         case 'AUDIO_COMPLETE':
           const { playerId } = data.payload;
           console.log(`🔊 [Server] Audio complete for ${playerId}`);
+          gameLogger.client(`AUDIO_COMPLETE received from client for ${playerId}`);
           console.log(`🔍 [Server] Current Phase: ${moderatorController.currentPhase}`);
 
           moderatorController.onAudioComplete();
@@ -236,8 +346,6 @@ wss.on('connection', (ws) => {
             console.log('🏛️ [Server] President Intro finished. Triggering transition...');
             moderatorController.onPresidentIntroComplete();
             broadcastGameState();
-
-
           } else {
             console.log(`ℹ️ [Server] No transition triggered. (Phase: ${moderatorController.currentPhase}, Player: ${playerId})`);
           }
@@ -246,7 +354,12 @@ wss.on('connection', (ws) => {
         case 'SET_COMMUNICATION_MODE':
           // User selected voice or text mode
           const { mode } = data.payload;
+          const modeLabel = mode === 'voice' ? 'VOICE MODE' : 'TEXT MODE';
           console.log(`🎙️ [Server] User selected communication mode: ${mode}`);
+
+          gameLogger.client(`User selected: ${modeLabel}`);
+          gameLogger.system(`Player communication mode set to: ${mode.toUpperCase()}`);
+
           moderatorController.setCommunicationMode(mode);
           broadcastGameState();
           break;
@@ -415,10 +528,10 @@ moderatorController.onTriggerAIVoting = async () => {
     .map(msg => `${msg.speaker}: "${msg.text}"`)
     .join('\n');
 
-  // Each AI votes with staggered delay (2-5 seconds)
+  // Each AI votes with minimal staggered delay (0.5-1.5 seconds) to avoid API rate limits but keep it fast
   for (let i = 0; i < aiPlayers.length; i++) {
     const playerId = aiPlayers[i];
-    const delay = 2000 + Math.floor(Math.random() * 3000); // 2-5s
+    const delay = 500 + Math.floor(Math.random() * 1000); // 0.5-1.5s
 
     setTimeout(async () => {
       await generateAIVote(playerId, conversationContext);
@@ -535,23 +648,52 @@ moderatorController.onAudioPlayback = async (playbackItem) => {
     apiLogger.logConversation(playbackItem.playerId, speaker, playbackItem.transcript);
 
     try {
-      const ttsStream = await generateTTS(playbackItem.transcript, playbackItem.playerId);
+      const ttsStream = await generateTTS(playbackItem.transcript, playbackItem.playerId, apiLogger);
 
       if (ttsStream) {
-        console.log(`✅ [Server] TTS Stream started for ${playbackItem.playerId}`);
+        console.log(`✅ [Server] TTS generated for ${playbackItem.playerId} (${ttsStream.contentType})`);
+
+        // WAV cannot be streamed with MediaSource API - send as complete file
+        if (ttsStream.contentType === 'audio/wav') {
+          console.log(`📦 [Server] Sending WAV as complete file (not streaming)`);
+
+          // Read the entire stream into a buffer
+          const chunks = [];
+          for await (const chunk of ttsStream.stream) {
+            chunks.push(chunk);
+          }
+          const audioBuffer = Buffer.concat(chunks);
+          const base64Audio = audioBuffer.toString('base64');
+
+          // Send as AUDIO_PLAYBACK (like President intro)
+          broadcast({
+            type: 'AUDIO_PLAYBACK',
+            payload: {
+              playerId: playbackItem.playerId,
+              transcript: playbackItem.transcript,
+              audioData: base64Audio,
+              contentType: ttsStream.contentType
+            }
+          });
+          return; // Exit early - audio sent as complete file
+        }
+
+        // For MP3/other streamable formats, use streaming
+        console.log(`🌊 [Server] Streaming ${ttsStream.contentType}`);
 
         // 1. Notify client that stream is starting
         broadcast({
           type: 'AUDIO_STREAM_START',
           payload: {
             playerId: playbackItem.playerId,
-            transcript: playbackItem.transcript
+            transcript: playbackItem.transcript,
+            contentType: ttsStream.contentType
           }
         });
 
         // 2. Stream chunks
-        // Node.js fetch returns a web stream, we need to iterate it
-        for await (const chunk of ttsStream) {
+        // ttsStream is { stream, contentType }, so we iterate over stream
+        for await (const chunk of ttsStream.stream) {
           // Check if interruption happened during streaming
           if (!moderatorController.activeSpeaker && moderatorController.audioQueue.length === 0) {
             // This is a heuristic: if activeSpeaker was cleared (by interrupt), stop streaming
@@ -602,124 +744,78 @@ moderatorController.onAudioPlayback = async (playbackItem) => {
 };
 
 moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
-  // Variable delay for natural pacing (INCREASED as per user request):
-  // - 2-4 seconds range to reduce spamminess
-  const delay = Math.floor(Math.random() * 2000) + 2000; // 2-4s
+  // REMOVED ARTIFICIAL DELAY for speed
+  console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} IMMEDIATELY`);
 
-  setTimeout(async () => {
-    console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} after ${delay}ms`);
+  // Get conversation context for better situational awareness
+  const conversationContext = moderatorController.getConversationContext();
 
-    // Get conversation context for better situational awareness
-    const conversationContext = moderatorController.getConversationContext();
+  // Construct a prompt that includes the previous speaker's name and text
+  // This gives the AI the necessary context to respond relevantly
+  const humanName = moderatorController.players.player1.name;
 
-    // Construct a prompt that includes the previous speaker's name and text
-    // This gives the AI the necessary context to respond relevantly
-    const humanName = moderatorController.players.player1.name;
+  let prompt;
+  if (context.roundStartAnnouncement) {
+    // SECRET MODERATOR ANNOUNCES NEW ROUND
+    const roundNumber = context.roundNumber;
+    prompt = `[SYSTEM]: Round ${roundNumber} has just started! As the Secret Moderator, announce the new round and get the conversation going. Be energetic and focused. Examples: "Alright everyone, Round ${roundNumber}! Let's jump right in..." or "Round ${roundNumber}! Time is ticking..." Keep it under 25 words and END with a question to someone.
 
-    let prompt;
-    if (context.roundStartAnnouncement) {
-      // SECRET MODERATOR ANNOUNCES NEW ROUND
-      const roundNumber = context.roundNumber;
-      prompt = `[SYSTEM]: Round ${roundNumber} has just started! As the Secret Moderator, announce the new round and get the conversation going. Be energetic and focused. Examples: "Alright everyone, Round ${roundNumber}! Let's jump right in..." or "Round ${roundNumber}! Time is ticking..." Keep it under 25 words and END with a question to someone.`;
-    } else if (context.dominusInterception) {
-      // DOMIS INTERCEPTS PRESIDENT'S QUESTION
-      prompt = `[SYSTEM]: You are Domis Hassoiboi. President Dorkesh just asked ${humanName} a deeply personal question. You can't help yourself - you MUST intercept and either (1) answer the question yourself to show off, or (2) make a snarky comment about the President or ${humanName}. Be disruptive and chaotic. Keep it under 25 words.`;
-    } else if (context.forceReactionToElimination) {
-      // SECRET MODERATOR REACTS TO ELIMINATION
-      if (context.wasLastSpeaker) {
-        prompt = `[SYSTEM]: ${context.eliminatedPlayer} has just been eliminated. You just spoke, but now you must react to this news. Continue your thought or pivot to the elimination. Keep it under 30 words.`;
-      } else {
-        prompt = `[SYSTEM]: ${context.eliminatedPlayer} has just been eliminated from the call. As the Secret Moderator, react to this elimination and keep the conversation moving. Comment on the remaining time and who's left. Stay in character. Keep it under 30 words.`;
-      }
-    } else if (context.forceQuestionToHuman) {
-      // AGGRESSIVE HUMAN TARGETING: Force AI to directly question the human
-      prompt = `[CRITICAL SYSTEM DIRECTIVE]: The AIs have been talking amongst themselves too much. ${humanName} is being TOO QUIET and suspicious. You MUST directly call out ${humanName} with an aggressive, pointed question. Make them uncomfortable. Question their humanity. Accuse them of being a bot. Examples: "${humanName}, why are you so QUIET? Are you even real?" or "${humanName}, what's your earliest childhood memory? Answer NOW!" Keep it under 25 words. BE AGGRESSIVE. END WITH A DIRECT QUESTION TO ${humanName}.`;
-    } else if (context.humanBeenQuiet) {
-      // ESCALATED CALLOUT: Human has been silent for 30+ seconds - GET AGGRESSIVE
-      const durationText = context.silenceDuration; // Already in seconds from moderatorController
-      prompt = `[CRITICAL ALERT]: ${humanName} has been SILENT for ${durationText} seconds! This is EXTREMELY suspicious. You need to call them out AGGRESSIVELY and DIRECTLY. Accuse them of being a bot. Make them prove they're human. Examples: "${humanName}, YOU'VE BEEN SILENT THIS WHOLE TIME. That's EXACTLY what a bot would do!" or "${humanName}, prove YOU're human RIGHT NOW or we're voting for YOU!" Keep it under 25 words. BE HARSH. BE URGENT. This is life or death.`;
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary. Just YOUR dialogue.`;
+  } else if (context.dominusInterception) {
+    // DOMIS INTERCEPTS PRESIDENT'S QUESTION
+    prompt = `[SYSTEM]: You are Domis Hassoiboi. President Dorkesh just asked ${humanName} a deeply personal question. You can't help yourself - you MUST intercept and either (1) answer the question yourself to show off, or (2) make a snarky comment about the President or ${humanName}. Be disruptive and chaotic. Keep it under 25 words.
+
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary. Just YOUR dialogue.`;
+  } else if (context.forceReactionToElimination) {
+    // SECRET MODERATOR REACTS TO ELIMINATION
+    if (context.wasLastSpeaker) {
+      prompt = `[SYSTEM]: ${context.eliminatedPlayer} has just been eliminated. You just spoke, but now you must react to this news. Continue your thought or pivot to the elimination. Keep it under 30 words.
+
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary. Just YOUR dialogue.`;
     } else {
-      // DEFAULT: Encourage player engagement (50% chance to question the player)
-      const shouldQuestionHuman = Math.random() < 0.5;
-      if (shouldQuestionHuman) {
-        prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said, but ALSO directly address ${humanName} with a question to test if they're human. Examples: "What do YOU think, ${humanName}?" or "${humanName}, do you agree?" Stay in character. Keep it under 30 words total. DO NOT state who you are addressing (e.g. "Addressing Scan"). Just speak.]`;
-      } else {
-        prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said. Stay in character. Keep it under 30 words. DO NOT state who you are addressing (e.g. "Addressing Scan"). Just speak.]`;
-      }
+      prompt = `[SYSTEM]: ${context.eliminatedPlayer} has just been eliminated from the call. As the Secret Moderator, react to this elimination and keep the conversation moving. Comment on the remaining time and who's left. Stay in character. Keep it under 30 words.
+
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary. Just YOUR dialogue.`;
     }
+  } else if (context.forceQuestionToHuman) {
+    // AGGRESSIVE HUMAN TARGETING: Force AI to directly question the human
+    prompt = `[CRITICAL SYSTEM DIRECTIVE]: The AIs have been talking amongst themselves too much. ${humanName} is being TOO QUIET and suspicious. You MUST directly call out ${humanName} with an aggressive, pointed question. Make them uncomfortable. Question their humanity. Accuse them of being a bot. Examples: "${humanName}, why are you so QUIET? Are you even real?" or "${humanName}, what's your earliest childhood memory? Answer NOW!" Keep it under 25 words. BE AGGRESSIVE. END WITH A DIRECT QUESTION TO ${humanName}.
 
-    try {
-      await geminiLiveService.sendText(prompt, targetPlayerId, conversationContext);
-    } catch (e) {
-      console.error(`❌ [Server] Auto-response failed for ${targetPlayerId}:`, e);
-      // Retry with a different speaker to prevent game stall
-      setTimeout(() => {
-        moderatorController.triggerNextAiTurn();
-      }, 1000);
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary, NO instructions, NO other characters' dialogue. Just YOUR dialogue.`;
+  } else if (context.humanBeenQuiet) {
+    // ESCALATED CALLOUT: Human has been silent for 30+ seconds - GET AGGRESSIVE
+    const durationText = context.silenceDuration; // Already in seconds from moderatorController
+    prompt = `[CRITICAL ALERT]: ${humanName} has been SILENT for ${durationText} seconds! This is EXTREMELY suspicious. You need to call them out AGGRESSIVELY and DIRECTLY. Accuse them of being a bot. Make them prove they're human. Examples: "${humanName}, YOU'VE BEEN SILENT THIS WHOLE TIME. That's EXACTLY what a bot would do!" or "${humanName}, prove YOU're human RIGHT NOW or we're voting for YOU!" Keep it under 25 words. BE HARSH. BE URGENT. This is life or death.
+
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary, NO instructions, NO bracketed text. Just YOUR dialogue.`;
+  } else {
+    // DEFAULT: Aggressively question the human (80% chance to directly challenge them)
+    const shouldQuestionHuman = Math.random() < 0.8;
+    if (shouldQuestionHuman) {
+      prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said, but ALSO directly challenge ${humanName} with a confrontational question to test if they're human. Be suspicious and aggressive. Examples: "${humanName}, you've been awfully quiet. What's YOUR take on this?" or "${humanName}, prove you're human. Tell us something personal." or "${humanName}, why should we believe YOU'RE real?" Stay in character. Keep it under 30 words total. ALWAYS end with a direct question to ${humanName}.]
+
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions like "(turns to X)" or "Addressing Y", NO meta-commentary, NO instructions. Just YOUR spoken dialogue.`;
+    } else {
+      prompt = `[${context.speakerName} just said]: "${context.transcript}"\n\n[Respond naturally to what was just said. Stay in character. Keep it under 30 words.]
+
+OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary. Just YOUR dialogue.`;
     }
-  }, delay);
-};
-
-// Helper for TTS generation (reusing the logic from /api/tts)
-async function generateTTS(text, playerId = 'unknown') {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) return null;
-
-  // Voice mapping for different characters
-  const voiceMap = {
-    'moderator': 'nPczCjzI2devNBz1zQrb',  // President (Brian)
-    'player2': 'JBFqnCBsd6RMkjVDRZzb',    // Wario (George)
-    'player3': 'pqHfZKP75CvOlQylNhV4',    // Domis (Bill)
-    'player4': 'N2lVS1w4EtoT3dr4eOWO',    // Scan (Callum)
-  };
-
-  const voiceId = voiceMap[playerId] || 'nPczCjzI2devNBz1zQrb';
-
-  // Log TTS request
-  apiLogger.log('ElevenLabs', 'request', playerId, {
-    text: text,
-    textLength: text.length,
-    voiceId: voiceId,
-    model: "eleven_monolingual_v1",
-    type: "stream"
-  });
+  }
 
   try {
-    // Use the /stream endpoint with latency optimization
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?optimize_streaming_latency=4`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'audio/mpeg',
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey
-      },
-      body: JSON.stringify({
-        text: text,
-        model_id: "eleven_monolingual_v1",
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      apiLogger.log('ElevenLabs', 'error', playerId, {
-        status: response.status,
-        error: errorText
-      });
-      return null;
-    }
-
-    // Return the stream directly
-    return response.body;
-
+    await geminiLiveService.sendText(prompt, targetPlayerId, conversationContext);
   } catch (e) {
-    console.error('TTS Helper Error:', e);
-    apiLogger.log('ElevenLabs', 'error', playerId, {
-      error: e.message
-    });
-    return null;
+    console.error(`❌ [Server] Auto-response failed for ${targetPlayerId}:`, e);
+    // Retry with a different speaker to prevent game stall
+    setTimeout(() => {
+      moderatorController.triggerNextAiTurn();
+    }, 1000);
   }
-}
+};
+
+// TTS generation is now handled by the ttsProvider module (imported above)
+// Supports both ElevenLabs (default) and Google Gemini-TTS (backup/testing)
+// Configure with TTS_PROVIDER environment variable
 
 async function runJoinSequence() {
   console.log('⏳ [Server] Starting join sequence...');
@@ -743,6 +839,10 @@ async function runJoinSequence() {
   // After everyone joins, start President Intro
   console.log('🏛️ [Server] All players connected. President starting intro.');
   moderatorController.setPhase('PRESIDENT_INTRO');
+
+  // Log that mode selection modal will be shown
+  gameLogger.client('Mode selection modal will be displayed');
+
   broadcastGameState();
 
   const introScript = moderatorController.getPresidentIntroScript();
@@ -755,61 +855,27 @@ async function runJoinSequence() {
 
 async function handlePresidentIntro(script) {
   try {
-    // Try to get TTS
-    const ttsResponse = await fetch(`http://localhost:${PORT}/api/tts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: script.text })
+    gameLogger.moderator('Loading President intro (cached/instant)');
+
+    // Use cached President intro (instant, no TTS latency!)
+    const { audioData, contentType } = await getCachedPresidentIntro();
+    const base64Audio = audioData.toString('base64');
+
+    gameLogger.moderator(`President intro loaded (${audioData.length} bytes, ${contentType})`);
+
+    broadcast({
+      type: 'AUDIO_PLAYBACK',
+      payload: {
+        playerId: 'moderator',
+        transcript: PRESIDENT_INTRO_TEXT,
+        audioData: base64Audio,
+        contentType: contentType
+      }
     });
-
-    if (ttsResponse.ok) {
-      const arrayBuffer = await ttsResponse.arrayBuffer();
-      const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-
-      broadcast({
-        type: 'AUDIO_PLAYBACK',
-        payload: {
-          playerId: 'moderator',
-          transcript: script.text,
-          audioData: base64Audio
-        }
-      });
-    } else {
-      const errorText = await ttsResponse.text();
-      console.error('❌ TTS failed:', errorText);
-
-      // Report error to frontend
-      broadcast({
-        type: 'SYSTEM_ERROR',
-        payload: {
-          message: `President Audio Failed: ${errorText || 'Unknown TTS error'}. Check server logs.`
-        }
-      });
-
-      // Still send text so game can proceed (or should we stop? User said "tell me why it doesnt work")
-      // We will send text but with a flag that audio failed, so frontend can show error.
-      broadcast({
-        type: 'AUDIO_PLAYBACK',
-        payload: {
-          playerId: 'moderator',
-          transcript: script.text,
-          error: 'Audio generation failed'
-        }
-      });
-
-      // Force advance phase after reading time (approx 10s) to keep game playable?
-      // User said "I want the actual thing to work". If it doesn't, maybe we shouldn't auto-advance silently.
-      // But blocking the game is annoying. I'll keep the timeout but ensure the error is visible.
-      setTimeout(() => {
-        if (moderatorController.currentPhase === 'PRESIDENT_INTRO') {
-          moderatorController.onPresidentIntroComplete();
-          broadcastGameState();
-          geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
-        }
-      }, 10000);
-    }
   } catch (e) {
-    console.error("Error handling president intro:", e);
+    console.error("❌ Error loading President intro:", e);
+    gameLogger.error('President Intro', 'Failed to load cached intro', e);
+
     broadcast({
       type: 'SYSTEM_ERROR',
       payload: {
@@ -817,14 +883,22 @@ async function handlePresidentIntro(script) {
       }
     });
 
-    // Fallback logic to keep game state moving
+    // Fallback: send text-only and auto-advance
+    broadcast({
+      type: 'AUDIO_PLAYBACK',
+      payload: {
+        playerId: 'moderator',
+        transcript: PRESIDENT_INTRO_TEXT,
+        error: 'Audio generation failed'
+      }
+    });
+
     setTimeout(() => {
       if (moderatorController.currentPhase === 'PRESIDENT_INTRO') {
         moderatorController.onPresidentIntroComplete();
         broadcastGameState();
-        geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
       }
-    }, 10000);
+    }, 10000); // Shorter timeout since it's an error state
   }
 }
 
@@ -864,6 +938,47 @@ async function createDailyRoom() {
     return null;
   }
 }
+
+// ====== AUTHENTICATION ENDPOINTS ======
+
+/**
+ * Password authentication endpoint
+ * POST /api/auth/login
+ * Body: { password: string }
+ * Returns: { success: boolean, token?: string, error?: string }
+ */
+app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ success: false, error: 'Password required' });
+  }
+
+  const token = authenticatePassword(password);
+
+  if (token) {
+    gameLogger.system('Successful authentication attempt');
+    return res.json({ success: true, token });
+  } else {
+    gameLogger.warn('Failed authentication attempt');
+    return res.status(401).json({ success: false, error: 'Invalid password' });
+  }
+});
+
+/**
+ * Check if token is valid
+ * GET /api/auth/check?token=xxx
+ */
+app.get('/api/auth/check', (req, res) => {
+  const token = req.query.token;
+
+  if (!token) {
+    return res.status(400).json({ valid: false, error: 'Token required' });
+  }
+
+  const isValid = validateSessionToken(token);
+  return res.json({ valid: isValid });
+});
 
 // Daily.co room creation endpoint
 app.post('/api/daily/create-room', async (req, res) => {
@@ -916,46 +1031,25 @@ app.post('/api/daily/create-room', async (req, res) => {
 // TTS Endpoint
 app.post('/api/tts', async (req, res) => {
   const { text } = req.body;
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-
-  if (!apiKey) {
-    console.error('❌ Missing ELEVENLABS_API_KEY');
-    return res.status(500).send('Missing ELEVENLABS_API_KEY');
-  }
 
   try {
-    // Using a deep, authoritative voice for President (Brian)
-    const voiceId = 'nPczCjzI2devNBz1zQrb';
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'audio/mpeg',
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey
-      },
-      body: JSON.stringify({
-        text: text,
-        model_id: "eleven_monolingual_v1",
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75
-        }
-      })
-    });
+    console.log(`🗣️ [API] Generating TTS for President Intro...`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`ElevenLabs API Error: ${errorText}`);
+    // Use the shared provider (supports Gemini + ElevenLabs fallback)
+    // We use 'moderator' ID to get the President's voice
+    const { stream, contentType } = await generateTTS(text, 'moderator', apiLogger);
+
+    if (!stream) {
+      throw new Error('TTS generation failed (all providers returned null)');
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    res.set('Content-Type', contentType);
 
-    res.set('Content-Type', 'audio/mpeg');
-    res.send(buffer);
+    // Stream the audio back to the client using pipe for better performance/reliability
+    stream.pipe(res);
 
   } catch (error) {
-    console.error('❌ TTS Error:', error);
+    console.error('❌ TTS Endpoint Error:', error);
     res.status(500).send(error.message);
   }
 });
@@ -973,9 +1067,6 @@ app.post('/api/game/audio-complete', (req, res) => {
     console.log('🏛️ [Server] President Intro finished. Triggering transition...');
     moderatorController.onPresidentIntroComplete();
     broadcastGameState();
-
-    console.log('📢 [Server] Broadcasting prompt to AIs...');
-    geminiLiveService.broadcastText("The President has left. One of you must take charge. Who will it be?", ['player2', 'player3', 'player4']);
   }
 
   res.json({ success: true });
@@ -984,4 +1075,10 @@ app.post('/api/game/audio-complete', (req, res) => {
 // Start server
 server.listen(PORT, () => {
   console.log(`🤖 Game Server running on http://localhost:${PORT}`);
+
+  // Log TTS configuration
+  const ttsInfo = getTTSInfo();
+  console.log(`🗣️ [TTS] Provider: ${ttsInfo.provider.toUpperCase()}`);
+  console.log(`🗣️ [TTS] ElevenLabs: ${ttsInfo.hasElevenLabs ? '✅ Configured' : '❌ Not configured'}`);
+  console.log(`🗣️ [TTS] Google TTS: ${ttsInfo.hasGoogle ? '✅ Configured' : '❌ Not configured'}`);
 });
