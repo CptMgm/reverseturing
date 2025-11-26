@@ -292,7 +292,7 @@ export const GameProvider = ({ children }) => {
 
       // Use environment variable if available, otherwise detect
       const backendUrl = import.meta.env.VITE_BACKEND_URL ||
-        (isProduction ? 'wss://your-backend-url.run.app' : 'ws://localhost:3001');
+        (isProduction ? 'wss://reverse-turing-backend-271123520248.us-central1.run.app' : 'ws://localhost:3001');
 
       // Get auth token from localStorage
       const authToken = localStorage.getItem('gameAuthToken');
