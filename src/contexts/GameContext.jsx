@@ -624,7 +624,12 @@ export const GameProvider = ({ children }) => {
     } else {
       console.warn('⚠️ [Client] WS disconnected. Sending AUDIO_COMPLETE via HTTP fallback...');
       try {
-        await fetch('http://localhost:3001/api/game/audio-complete', {
+        // Get backend URL (use HTTPS for API calls)
+        const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
+        const backendUrl = import.meta.env.VITE_BACKEND_URL ||
+          (isProduction ? 'https://reverse-turing-backend-271123520248.us-central1.run.app' : 'http://localhost:3001');
+
+        await fetch(`${backendUrl}/api/game/audio-complete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ playerId })
