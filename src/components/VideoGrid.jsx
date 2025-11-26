@@ -49,7 +49,8 @@ const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUs
         const folder = folderMap[id];
         const imageName = imageMap[id];
 
-        return `/images/characters/${folder}/${imageName}`;
+        // URL encode the path to handle spaces in folder names
+        return `/images/characters/${encodeURIComponent(folder)}/${imageName}`;
     };
 
     return (
