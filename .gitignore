@@ -6,6 +6,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+api-logs.jsonl
+conversation-log.txt
+server-debug.log
+cache/
 
 node_modules
 dist

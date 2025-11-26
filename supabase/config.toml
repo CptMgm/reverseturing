@@ -1,4 +1,0 @@
-project_id = "pbjeeepojkfdagyvegty"
-
-[functions.ai-chat]
-verify_jwt = false

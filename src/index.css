@@ -29,9 +29,17 @@
     @apply min-h-screen text-foreground;
     font-family: 'Inter', sans-serif;
     background: hsl(var(--background));
-    background-image: 
+    background-image:
       radial-gradient(circle at 25% 25%, hsl(var(--muted)) 0%, transparent 50%),
       radial-gradient(circle at 75% 75%, hsl(var(--secondary)) 0%, transparent 50%);
+    background-attachment: fixed;
+    background-size: cover;
+    min-height: 100vh;
+    min-height: -webkit-fill-available; /* iOS Safari fix */
+  }
+
+  html {
+    height: -webkit-fill-available; /* iOS Safari fix */
   }
 }
 
@@ -221,8 +229,29 @@
   transform: rotateX(15deg) rotateY(10deg) scale(1.05);
 }
 
-@media (max-width: 640px) {
-  .game-container { @apply px-2 py-4; }
+@media (max-width: 768px) {
+  /* Mobile optimizations */
+  .game-container { @apply px-2 py-2; }
   .portal-btn-primary, .portal-btn-secondary { @apply px-4 py-2 text-sm; }
   .aperture-title { @apply text-2xl; }
+
+  /* Hide chat on mobile to save space - voice only */
+  [data-chat-sidebar] { @apply hidden; }
+
+  /* Make video grid take full width on mobile */
+  [data-video-grid] { @apply w-full; }
+
+  /* Smaller text for mobile */
+  body { font-size: 14px; }
+
+  /* Touch-friendly buttons */
+  button {
+    min-height: 44px; /* iOS touch target */
+    min-width: 44px;
+  }
+
+  /* Prevent zoom on input focus */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }

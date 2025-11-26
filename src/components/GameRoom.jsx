@@ -233,10 +233,11 @@ const GameRoom = () => {
                         {/* The Risks Section */}
                         <section>
                             <h2 className="text-3xl font-bold text-amber-200 mb-6">The Risks We're Racing Toward</h2>
-                            <p>Given what is at stake. It is on us to understand the risks and harms we are facing. Outlined below are 8 types of AI harm that might influence the future of humanity</p>
+                            <p>Given what is at stake, it is on us to understand the risks and harms we are facing.</p>
+                            <p>Outlined below are 8 types of AI harm that might influence the future of humanity</p>
                             <AIHarmsInfographic />
                             <br></br>
-                            <p>The original infographic was first published here: <a href="https://aisfounders.com/harms" className="text-amber-200 hover:text-amber-100 underline">AI Safety Founders - Harms</a></p>
+                            <p>Find the original infographic here: <a href="https://aisfounders.com/harms" className="text-amber-200 hover:text-amber-100 underline">AI Safety Founders - Harms</a></p>
                             <p>Also read more about <a href="https://keepthefuturehuman.ai" className="text-amber-200 hover:text-amber-100 underline">Keep The Future Human</a></p>
                             
                         </section>
