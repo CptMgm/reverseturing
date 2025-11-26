@@ -291,8 +291,11 @@ export const GameProvider = ({ children }) => {
       const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
 
       // Use environment variable if available, otherwise detect
-      const backendUrl = import.meta.env.VITE_BACKEND_URL ||
-        (isProduction ? 'wss://reverse-turing-backend-271123520248.us-central1.run.app' : 'ws://localhost:3001');
+      let backendUrl = import.meta.env.VITE_BACKEND_URL ||
+        (isProduction ? 'https://reverse-turing-backend-271123520248.us-central1.run.app' : 'http://localhost:3001');
+
+      // Convert HTTP(S) to WS(S) for WebSocket connection
+      backendUrl = backendUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 
       // Get auth token from localStorage
       const authToken = localStorage.getItem('gameAuthToken');
