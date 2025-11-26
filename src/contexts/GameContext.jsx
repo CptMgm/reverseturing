@@ -290,16 +290,12 @@ export const GameProvider = ({ children }) => {
       // Check if we're in production (Lovable frontend)
       const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
 
-      // Get base URL (HTTPS)
+      // Use environment variable if available, otherwise detect
       let backendUrl = import.meta.env.VITE_BACKEND_URL ||
         (isProduction ? 'https://reverse-turing-backend-271123520248.us-central1.run.app' : 'http://localhost:3001');
 
-      // Convert HTTP URL to WebSocket URL
-      if (backendUrl.startsWith('https://')) {
-        backendUrl = backendUrl.replace('https://', 'wss://');
-      } else if (backendUrl.startsWith('http://')) {
-        backendUrl = backendUrl.replace('http://', 'ws://');
-      }
+      // Convert HTTP(S) to WS(S) for WebSocket connection
+      backendUrl = backendUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 
       // Get auth token from localStorage
       const authToken = localStorage.getItem('gameAuthToken');
