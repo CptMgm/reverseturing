@@ -117,12 +117,6 @@ export const PasswordModal = ({ onAuthenticate, error }) => {
               </button>
             </div>
           </form>
-
-          <div className="mt-4 pt-3 border-t-2 border-[#808080]">
-            <p className="text-black text-xs text-center" style={{ fontFamily: 'serif' }}>
-              Keep the future human
-            </p>
-          </div>
         </div>
       </div>
     </div>
