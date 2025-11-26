@@ -236,10 +236,15 @@
   .aperture-title { @apply text-2xl; }
 
   /* Hide chat on mobile to save space - voice only */
-  [data-chat-sidebar] { @apply hidden; }
+  [data-chat-sidebar] {
+    display: none !important;
+  }
 
   /* Make video grid take full width on mobile */
-  [data-video-grid] { @apply w-full; }
+  [data-video-grid] {
+    width: 100% !important;
+    padding: 0.5rem !important;
+  }
 
   /* Smaller text for mobile */
   body { font-size: 14px; }
@@ -253,5 +258,16 @@
   /* Prevent zoom on input focus */
   input, select, textarea {
     font-size: 16px !important;
+  }
+
+  /* Optimize header for mobile */
+  .flex.justify-between.items-center {
+    padding: 0.75rem !important;
+  }
+
+  /* Make voting buttons easier to tap on mobile */
+  [data-vote-button] {
+    min-height: 48px !important;
+    font-size: 0.875rem !important;
   }
 }

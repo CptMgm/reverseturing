@@ -623,7 +623,7 @@ const GameRoom = () => {
             {/* Main Content - Google Meet Style Layout */}
             <div className="flex-1 flex relative overflow-hidden">
                 {/* Left Side: Video Grid */}
-                <div className="flex-1 p-4 relative">
+                <div data-video-grid className="flex-1 p-4 relative">
                     {/* Daily.co Iframe Container - Hidden but active for audio/video connection */}
                     <div className="absolute inset-0 z-0 opacity-0 pointer-events-none">
                         <div ref={dailyRef} className="w-full h-full" />
@@ -644,7 +644,7 @@ const GameRoom = () => {
                 </div>
 
                 {/* Right Side: Chat & Voting - Collapsible */}
-                <div className={`${isChatOpen ? 'w-80' : 'w-12'} border-l border-slate-700 flex flex-col bg-gray-900/95 transition-all duration-300 relative z-10`}>
+                <div data-chat-sidebar className={`${isChatOpen ? 'w-80' : 'w-12'} border-l border-slate-700 flex flex-col bg-gray-900/95 transition-all duration-300 relative z-10`}>
                     {/* Texture overlay for chat panel */}
                     {isChatOpen && (
                         <div className="absolute inset-0 opacity-20 pointer-events-none" style={{
@@ -720,13 +720,6 @@ const GameRoom = () => {
                                     </form>
                                 </div>
                             </div>
-
-                            {/* Voting Panel - Only show during elimination phases */}
-                            {(gameState.phase === 'ELIMINATION_1' || gameState.phase === 'ELIMINATION_2' || gameState.phase === 'PRESIDENT_VERDICT') && (
-                                <div className="border-t border-slate-700 p-3">
-                                    <VoteControls />
-                                </div>
-                            )}
                         </>
                     ) : (
                         /* Collapsed State - Just the toggle button */
@@ -742,6 +735,13 @@ const GameRoom = () => {
                     )}
                 </div>
             </div>
+
+            {/* Voting Controls - Positioned above bottom controls on mobile */}
+            {(gameState.phase === 'ELIMINATION_1' || gameState.phase === 'ELIMINATION_2' || gameState.phase === 'PRESIDENT_VERDICT') && (
+                <div className="relative z-20 bg-gray-900/95 border-t border-slate-700">
+                    <VoteControls />
+                </div>
+            )}
 
             {/* Bottom Call Controls */}
             <div className="relative z-20 bg-gray-900/95 border-t border-slate-700 px-6 py-4 flex justify-center items-center gap-5 shadow-xl">
