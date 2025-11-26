@@ -57,47 +57,72 @@ export const PasswordModal = ({ onAuthenticate, error }) => {
   const displayError = localError || error;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 border-2 border-purple-500 rounded-lg p-8 max-w-md w-full shadow-2xl">
-        <div className="text-center mb-6">
-          <h2 className="text-3xl font-bold text-purple-400 mb-2">
-            Reverse Turing Test
-          </h2>
-          <p className="text-gray-400 text-sm">
-            Enter the password to play
-          </p>
+    <div className="fixed inset-0 bg-[#c0c0c0] flex items-center justify-center z-50 p-4">
+      <div className="bg-[#c0c0c0] border-4 border-t-white border-l-white border-r-[#808080] border-b-[#808080] p-1 max-w-md w-full shadow-[2px_2px_0px_rgba(0,0,0,0.5)]">
+        <div className="bg-[#000080] text-white px-2 py-1 flex justify-between items-center mb-1">
+          <span className="font-bold text-sm">Authentication Required</span>
+          <span className="font-bold">×</span>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
-              className="w-full px-4 py-3 bg-gray-800 border border-purple-500 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-400"
-              disabled={isLoading}
-              autoFocus
-            />
+        
+        <div className="bg-[#c0c0c0] p-4">
+          <div className="mb-4">
+            <h2 className="font-bold text-black mb-2" style={{ fontFamily: 'serif' }}>
+              Reverse Turing Test
+            </h2>
+            <p className="text-black text-sm" style={{ fontFamily: 'serif' }}>
+              Enter the password to play
+            </p>
           </div>
 
-          {displayError && (
-            <div className="text-red-400 text-sm text-center bg-red-900 bg-opacity-30 py-2 px-3 rounded border border-red-500">
-              {displayError}
+          <form onSubmit={handleSubmit}>
+            <div className="mb-3">
+              <label className="block text-black text-sm mb-1" style={{ fontFamily: 'serif' }}>
+                Password:
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-2 py-1 bg-white border-2 border-t-[#808080] border-l-[#808080] border-r-white border-b-white text-black"
+                style={{ fontFamily: 'monospace' }}
+                disabled={isLoading}
+                autoFocus
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-          >
-            {isLoading ? 'Authenticating...' : 'Enter Game'}
-          </button>
-        </form>
+            {displayError && (
+              <div className="mb-3 p-2 bg-white border-2 border-t-[#808080] border-l-[#808080] border-r-white border-b-white">
+                <p className="text-red-600 text-xs" style={{ fontFamily: 'serif' }}>
+                  {displayError}
+                </p>
+              </div>
+            )}
 
-        <div className="mt-6 text-center text-xs text-gray-500">
-          <p>Keep the future human</p>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="px-4 py-1 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#808080] border-b-[#808080] text-black disabled:opacity-50 active:border-t-[#808080] active:border-l-[#808080] active:border-r-white active:border-b-white"
+                style={{ fontFamily: 'serif' }}
+              >
+                {isLoading ? 'Please wait...' : 'OK'}
+              </button>
+              <button
+                type="button"
+                className="px-4 py-1 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#808080] border-b-[#808080] text-black"
+                style={{ fontFamily: 'serif' }}
+                disabled
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-4 pt-3 border-t-2 border-[#808080]">
+            <p className="text-black text-xs text-center" style={{ fontFamily: 'serif' }}>
+              Keep the future human
+            </p>
+          </div>
         </div>
       </div>
     </div>
