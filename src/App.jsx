@@ -33,7 +33,7 @@ function App() {
       // Validate the token with the backend
       try {
         const apiUrl = import.meta.env.VITE_BACKEND_URL ||
-          (isProduction ? 'https://your-backend-url.run.app' : 'http://localhost:3001');
+          (isProduction ? 'https://reverse-turing-backend-271123520248.us-central1.run.app' : 'http://localhost:3001');
 
         const response = await fetch(`${apiUrl}/api/auth/check?token=${token}`);
         const data = await response.json();
