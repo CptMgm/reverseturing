@@ -53,7 +53,7 @@ export class GeminiLiveService {
         .map(msg => `${msg.speaker}: "${msg.text}"`)
         .join('\n');
 
-      contextualPrompt = `[Recent conversation]\n${recentConvo}\n\n[Your turn to respond naturally to continue this conversation. Keep it under 30 words. Be emotional and imperfect.]`;
+      contextualPrompt = `[Recent conversation]\n${recentConvo}\n\n[Your turn to respond naturally. Keep it under 30 words. Be emotional and imperfect. If the human player has been quiet, consider addressing them with a question.]`;
     }
 
     // Add user message to history
@@ -158,6 +158,14 @@ export class GeminiLiveService {
         console.warn('⚠️ [GeminiService] Rate limit hit. Suggest switching models.');
       }
     }
+  }
+
+  /**
+   * Clear all AI sessions (for game reset)
+   */
+  clearAllSessions() {
+    console.log('🧹 [GeminiService] Clearing all AI sessions');
+    this.sessions.clear();
   }
 
   /**

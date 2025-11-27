@@ -158,15 +158,19 @@ export class ModeratorController {
 
     // Reset user interaction
     this.userTypingState = 'idle';
+
+    // Clear ALL timers to prevent background processes
     if (this.thinkingTimer) clearTimeout(this.thinkingTimer);
     if (this.pendingAiTurnTimer) clearTimeout(this.pendingAiTurnTimer);
     if (this.userTypingTimer) clearTimeout(this.userTypingTimer);
+    if (this.audioTimeoutId) clearTimeout(this.audioTimeoutId);
+    if (this.audioMaxTimeoutId) clearTimeout(this.audioMaxTimeoutId);
 
     // Stop timer
     this.stopRoundTimer();
     this.eliminationRevealTime = null;
 
-    gameLogger.system('Game reset complete');
+    gameLogger.system('Game reset complete - all timers cleared');
 
     // Notify phase change
     if (this.onPhaseChange) {

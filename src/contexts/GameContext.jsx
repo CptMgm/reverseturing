@@ -748,6 +748,14 @@ export const GameProvider = ({ children }) => {
       stopVoiceMode,
       resetGame: () => {
         stopAudio(); // Stop local audio immediately
+
+        // Reset client-side state
+        setCommunicationMode(null);
+        setShowModeSelection(false);
+        modeSelectedRef.current = false; // Reset mode selection flag
+        setIsSpeaking(false);
+
+        // Send reset to server
         if (wsRef.current && isConnected) {
           wsRef.current.send(JSON.stringify({ type: 'RESET_GAME' }));
         }

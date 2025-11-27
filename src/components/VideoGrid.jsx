@@ -29,28 +29,17 @@ const VideoGrid = ({ players, activeSpeaker, connectedPlayers = [], waitingForUs
         visiblePlayers.length <= 4 ? 'grid-cols-2' :
             'grid-cols-2 md:grid-cols-3';
 
-    // Helper to get image path
+    // Helper to get image path - simplified flat structure
     const getImagePath = (id) => {
-        // Map player IDs to their character folders
-        const folderMap = {
-            'player2': 'player 1', // Wario
-            'player3': 'player 2', // Domis
-            'player4': 'player 3', // Scan
-            'moderator': 'moderator' // President Dorkesh
-        };
-
+        // Direct mapping to flat avatar directory - using WOODEN versions
         const imageMap = {
-            'player2': 'Wario_Wooden.jpg',
-            'player3': 'Domis_Wooden.jpg',
-            'player4': 'Scan_Wooden.jpg',
-            'moderator': 'Dorkesh_Wooden.jpg'
+            'player2': '/images/avatars/wario-wooden.jpg',
+            'player3': '/images/avatars/domis-wooden.jpg',
+            'player4': '/images/avatars/scan-wooden.jpg',
+            'moderator': '/images/avatars/dorkesh-wooden.jpg'
         };
 
-        const folder = folderMap[id];
-        const imageName = imageMap[id];
-
-        // URL encode the path to handle spaces in folder names
-        return `/images/characters/${encodeURIComponent(folder)}/${imageName}`;
+        return imageMap[id] || '/images/avatars/default.jpg';
     };
 
     return (

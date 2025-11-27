@@ -497,7 +497,7 @@ const GameRoom = () => {
                             onChange={(e) => setInputText(e.target.value)}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && inputText.trim()) {
-                                    startGame(inputText);
+                                    startGame(inputText.trim());
                                     setInputText('');
                                 }
                             }}
@@ -508,8 +508,10 @@ const GameRoom = () => {
                     {/* CTA Button */}
                     <button
                         onClick={() => {
-                            startGame(inputText);
-                            setInputText('');
+                            if (inputText.trim()) {
+                                startGame(inputText.trim());
+                                setInputText('');
+                            }
                         }}
                         disabled={!inputText.trim() || !userAvatar}
                         className={`px-8 sm:px-12 py-3 sm:py-4 text-lg sm:text-xl font-semibold
@@ -762,8 +764,12 @@ const GameRoom = () => {
                 {/* Hang Up Button */}
                 <button
                     onClick={() => {
+                        // IMMEDIATELY stop all audio and reset game
+                        resetGame();
+
                         // Play hang up sound
                         new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(e => { });
+
                         // Show end screen after brief delay
                         setTimeout(() => {
                             setEndScreenResult('disconnected');

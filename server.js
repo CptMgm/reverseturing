@@ -291,10 +291,14 @@ wss.on('connection', (ws, req) => {
           // Initialize gameLogger session for timestamped logging
           gameLogger.startSession();
 
-          // Set player name if provided
-          if (data.payload && data.payload.playerName) {
-            moderatorController.players.player1.name = data.payload.playerName;
-            console.log(`👤 [Server] Player 1 name set to: ${data.payload.playerName}`);
+          // Set player name if provided (with fallback)
+          if (data.payload && data.payload.playerName && data.payload.playerName.trim()) {
+            moderatorController.players.player1.name = data.payload.playerName.trim();
+            console.log(`👤 [Server] Player 1 name set to: ${data.payload.playerName.trim()}`);
+          } else {
+            // Fallback to default if no name provided
+            moderatorController.players.player1.name = 'Player 1';
+            console.log(`👤 [Server] No name provided, using default: Player 1`);
           }
 
           // Start the join sequence
@@ -445,10 +449,13 @@ wss.on('connection', (ws, req) => {
         case 'RESET_GAME':
           console.log('🔄 [Server] Resetting game and returning to lobby...');
 
+          // Clear all AI sessions first to prevent background processes
+          geminiLiveService.clearAllSessions();
+
           // Reset moderator controller
           moderatorController.resetGame();
 
-          // Reinitialize AI sessions
+          // Reinitialize AI sessions with fresh state
           initializeAIPlayers();
 
           // Broadcast reset state
@@ -461,7 +468,18 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    console.log('🔌 [Server] Client disconnected');
+    console.log('🔌 [Server] Client disconnected - resetting game');
+
+    // Clear all AI sessions to stop background processing
+    geminiLiveService.clearAllSessions();
+
+    // Reset moderator controller to stop all timers and AI responses
+    moderatorController.resetGame();
+
+    // Reinitialize AI sessions for next connection
+    initializeAIPlayers();
+
+    console.log('✅ [Server] Game reset after disconnect');
   });
 });
 

@@ -113,6 +113,7 @@ const VoteControls = () => {
                             <button
                                 key={id}
                                 onClick={() => castVote(id)}
+                                data-vote-button
                                 className={`px-4 py-3 rounded-lg font-bold text-sm transition-all transform hover:scale-105 ${isVoted
                                     ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-[0_0_20px_rgba(236,72,153,0.8)] border-2 border-pink-400'
                                     : 'bg-slate-900/80 text-gray-300 hover:bg-gradient-to-r hover:from-pink-900/50 hover:to-purple-900/50 hover:text-white border-2 border-purple-500/30 hover:border-pink-500/50 hover:shadow-[0_0_15px_rgba(236,72,153,0.4)]'
