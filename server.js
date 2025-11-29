@@ -19,6 +19,10 @@ let currentSessionTimestamp = null;
 let currentApiLogPath = null;
 let currentConversationLogPath = null;
 
+// Prevent rapid multiple resets
+let lastResetTime = 0;
+const RESET_DEBOUNCE_MS = 2000; // Ignore resets within 2s of last reset
+
 function initializeSessionLogs() {
   // Create logs directory if it doesn't exist
   if (!existsSync('logs')) {
@@ -322,6 +326,14 @@ wss.on('connection', (ws, req) => {
           // ... (skip to onTriggerAiResponse)
 
           moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
+            // Block AI responses during ELIMINATION, LOBBY, or GAME_OVER phases
+            if (moderatorController.currentPhase === 'LOBBY' ||
+                moderatorController.currentPhase === 'GAME_OVER' ||
+                moderatorController.currentPhase.startsWith('ELIMINATION')) {
+              console.log(`⏸️ [Server] Blocking AI auto-response during ${moderatorController.currentPhase} phase`);
+              return;
+            }
+
             // REMOVED ARTIFICIAL DELAY for speed
             console.log(`🤖 [Server] Triggering auto-response for ${targetPlayerId} IMMEDIATELY`);
 
@@ -378,6 +390,12 @@ wss.on('connection', (ws, req) => {
           moderatorController.onUserTyping(false);
           break;
 
+        case 'AUDIO_INTERRUPT':
+          // ✅ FIX #7: Handle barge-in interruption from client
+          console.log('🛑 [Server] Received AUDIO_INTERRUPT from client (barge-in)');
+          moderatorController.handleInterruption();
+          break;
+
         case 'HUMAN_INPUT':
           // Block human input if conversation is blocked (President announcement)
           // EXCEPTION: If we are explicitly waiting for a human response (e.g. President's question)
@@ -409,8 +427,23 @@ wss.on('connection', (ws, req) => {
           // Broadcast updated game state so chat shows the message
           broadcastGameState();
 
+          // Block message routing during LOBBY, GAME_OVER, or ELIMINATION phases
+          if (moderatorController.currentPhase === 'LOBBY' ||
+              moderatorController.currentPhase === 'GAME_OVER' ||
+              moderatorController.currentPhase.startsWith('ELIMINATION')) {
+            console.log(`⏸️ [Server] Ignoring human input during ${moderatorController.currentPhase} phase`);
+            break;
+          }
+
           // Route message to appropriate AI
           const routing = moderatorController.routeHumanMessage(data.payload.text);
+
+          // ✅ FIX #6b: Check if routing is null (rejected by phase guard)
+          if (!routing) {
+            console.log(`⏸️ [Server] Message routing blocked by moderator phase guard`);
+            break;
+          }
+
           const conversationContext = moderatorController.getConversationContext();
 
           if (routing.targetPlayerId === 'broadcast') {
@@ -447,6 +480,14 @@ wss.on('connection', (ws, req) => {
 
         case 'RETURN_TO_LOBBY':
         case 'RESET_GAME':
+          // Debounce: Ignore rapid multiple resets
+          const now = Date.now();
+          if (now - lastResetTime < RESET_DEBOUNCE_MS) {
+            console.log(`⏸️ [Server] Ignoring rapid reset (${now - lastResetTime}ms since last reset)`);
+            break;
+          }
+          lastResetTime = now;
+
           console.log('🔄 [Server] Resetting game and returning to lobby...');
 
           // Clear all AI sessions first to prevent background processes
@@ -781,7 +822,7 @@ moderatorController.onTriggerAiResponse = async (targetPlayerId, context) => {
 OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary. Just YOUR dialogue.`;
   } else if (context.dominusInterception) {
     // DOMIS INTERCEPTS PRESIDENT'S QUESTION
-    prompt = `[SYSTEM]: You are Domis Hassoiboi. President Dorkesh just asked ${humanName} a deeply personal question. You can't help yourself - you MUST intercept and either (1) answer the question yourself to show off, or (2) make a snarky comment about the President or ${humanName}. Be disruptive and chaotic. Keep it under 25 words.
+    prompt = `[SYSTEM]: You are Domis Has-a-bus. President Dorkesh just asked ${humanName} a deeply personal question. You can't help yourself - you MUST intercept and either (1) answer the question yourself to show off, or (2) make a snarky comment about the President or ${humanName}. Be disruptive and chaotic. Keep it under 25 words.
 
 OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage directions, NO meta-commentary. Just YOUR dialogue.`;
   } else if (context.forceReactionToElimination) {
@@ -1099,4 +1140,22 @@ server.listen(PORT, () => {
   console.log(`🗣️ [TTS] Provider: ${ttsInfo.provider.toUpperCase()}`);
   console.log(`🗣️ [TTS] ElevenLabs: ${ttsInfo.hasElevenLabs ? '✅ Configured' : '❌ Not configured'}`);
   console.log(`🗣️ [TTS] Google TTS: ${ttsInfo.hasGoogle ? '✅ Configured' : '❌ Not configured'}`);
+
+  // ✅ FIX #8: Pre-load President intro cache at startup
+  (async () => {
+    try {
+      console.log('🎤 [Cache] Pre-loading President intro...');
+      const startTime = Date.now();
+
+      const intro = await getCachedPresidentIntro();
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      if (intro) {
+        console.log(`✅ [Cache] President intro ready (${intro.audioData.length} bytes, took ${duration}s)`);
+      }
+    } catch (err) {
+      console.error('❌ [Cache] Failed to pre-load President intro:', err);
+      console.warn('⚠️  [Cache] First game will have delay while intro generates');
+    }
+  })();
 });

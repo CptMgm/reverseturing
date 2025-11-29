@@ -22,7 +22,7 @@ const PlayerSelection = ({ models, onModelChange, onStart }) => {
     },
     {
       id: 'player3',
-      name: 'Domis Hassoiboi',
+      name: 'Domis Has-a-bus',
       role: 'Chess Philosopher',
       description: 'Chess grandmaster and deep thinker focused on consciousness and mathematics',
       model: 'google',

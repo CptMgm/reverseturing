@@ -37,7 +37,7 @@ Visit `http://localhost:5173` to play!
 - **Voice or Text Mode**: Choose your communication method
 - **3 AI Characters**: Each with distinct personalities
   - **Wario Amadeuss**: Paranoid and dramatic
-  - **Domis Hassoiboi**: Arrogant and intellectual
+  - **Domis Has-a-bus**: Arrogant and intellectual
   - **Scan Ctrl+Altman**: Gen-Z, casual, uses slang
 - **Secret Moderator**: First AI to speak becomes the hidden conversation leader
 - **Turn-Based Debate**: Smart turn management with direct question detection

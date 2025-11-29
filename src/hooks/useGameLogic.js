@@ -480,7 +480,7 @@ STRICT FORMAT - Reply EXACTLY like this:
 
 Where [name] must be one of: ${availableOptions.join(', ')}
 
-Example: "I vote for Domis Hassoiboi. Their chess story had genuine frustration."
+Example: "I vote for Domis Has-a-bus. Their chess story had genuine frustration."
 
 Keep your explanation to ONE sentence (10-15 words max).`;
 

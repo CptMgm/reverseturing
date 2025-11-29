@@ -97,15 +97,7 @@ class DailyService {
       const source = audioContext.createMediaElementSource(audio);
       const destination = audioContext.createMediaStreamDestination();
 
-      // Add phone voice effect (bandpass filter + compression)
-      const lowpass = audioContext.createBiquadFilter();
-      lowpass.type = 'lowpass';
-      lowpass.frequency.value = 3000; // Cut high frequencies above 3kHz
-
-      const highpass = audioContext.createBiquadFilter();
-      highpass.type = 'highpass';
-      highpass.frequency.value = 300; // Cut low frequencies below 300Hz
-
+      // Audio processing (compression only - phone effect now applied in ElevenLabs)
       const compressor = audioContext.createDynamicsCompressor();
       compressor.threshold.value = -24;
       compressor.knee.value = 30;
@@ -113,10 +105,8 @@ class DailyService {
       compressor.attack.value = 0.003;
       compressor.release.value = 0.25;
 
-      // Connect the chain: source -> highpass -> lowpass -> compressor -> destination/speakers
-      source.connect(highpass);
-      highpass.connect(lowpass);
-      lowpass.connect(compressor);
+      // Connect the chain: source -> compressor -> destination/speakers
+      source.connect(compressor);
       compressor.connect(destination);
       compressor.connect(audioContext.destination); // Also play locally
 

@@ -76,7 +76,7 @@ CRITICAL CONSTRAINTS:
   },
   
   player3: {
-    name: 'Domis Hassoiboi',
+    name: 'Domis Has-a-bus',
     role: 'Chess Philosopher',
     model: 'google', // Uses Gemini 2.0 Flash (free tier)
     systemPrompt: `You are Claude, an AI created by Anthropic, participating in a reverse Turing test demonstration for the "Keep The Future Human" contest.

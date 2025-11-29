@@ -160,6 +160,27 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  // Correct commonly misheard character names in speech recognition
+  const correctCharacterNames = (text) => {
+    // Case-insensitive replacement for common mishearings
+    let corrected = text;
+
+    // Domis corrections
+    corrected = corrected.replace(/\bthomas\b/gi, 'Domis');
+    corrected = corrected.replace(/\bdennis\b/gi, 'Domis');
+    corrected = corrected.replace(/\bdominique\b/gi, 'Domis');
+
+    // Wario corrections
+    corrected = corrected.replace(/\bwarrior\b/gi, 'Wario');
+    corrected = corrected.replace(/\bmario\b/gi, 'Wario');
+
+    // Scan corrections
+    corrected = corrected.replace(/\bscan\s*control\s*altman\b/gi, 'Scan');
+    corrected = corrected.replace(/\bsean\b/gi, 'Scan');
+
+    return corrected;
+  };
+
   const startVoiceMode = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -197,8 +218,12 @@ export const GameProvider = ({ children }) => {
     };
 
     recognition.onresult = (event) => {
-      const transcript = event.results[event.results.length - 1][0].transcript;
-      console.log(`🗣️ [GameContext] Heard: "${transcript}"`);
+      let transcript = event.results[event.results.length - 1][0].transcript;
+      console.log(`🗣️ [GameContext] Heard (raw): "${transcript}"`);
+
+      // Correct commonly misheard character names
+      transcript = correctCharacterNames(transcript);
+      console.log(`🗣️ [GameContext] Corrected: "${transcript}"`);
 
       if (transcript.trim().length > 0) {
         sendHumanInput(transcript);

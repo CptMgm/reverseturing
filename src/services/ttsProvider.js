@@ -12,12 +12,12 @@ dotenv.config();
  * - GOOGLE_API_KEY_F3 or GOOGLE_API_KEY: Required for Gemini TTS (same keys used for text generation)
  */
 
-// Voice mapping for ElevenLabs
+// Voice mapping for ElevenLabs (using new custom voices)
 const ELEVENLABS_VOICES = {
-  'moderator': 'nPczCjzI2devNBz1zQrb',  // President (Brian)
-  'player2': 'JBFqnCBsd6RMkjVDRZzb',    // Wario (George)
-  'player3': 'pqHfZKP75CvOlQylNhV4',    // Domis (Bill)
-  'player4': 'N2lVS1w4EtoT3dr4eOWO',    // Scan (Callum)
+  'moderator': 's0XGIcqmceN2l7kjsqoZ',  // President Dorkesh (Voice Library)
+  'player2': 'QI6dMUTCXXVqw27WrlQs',    // Wario Amadeuss (Dario)
+  'player3': 'sLfduly0sixkh8riDzed',    // Domis Has-a-bus
+  'player4': '7EzWGsX10sAS4c9m9cPf',    // Scan Ctrl+Altman
 };
 
 // Voice mapping for Google Gemini-TTS
@@ -37,9 +37,9 @@ const TTS_PROVIDER = process.env.TTS_PROVIDER?.toLowerCase() || 'elevenlabs';
  * Returns a readable stream of audio chunks
  */
 async function generateTTSElevenLabs(text, playerId, apiLogger) {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey = process.env.ELEVENLABS_API_KEY_2 || process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
-    console.error('❌ [ElevenLabs] Missing ELEVENLABS_API_KEY');
+    console.error('❌ [ElevenLabs] Missing ELEVENLABS_API_KEY_2 or ELEVENLABS_API_KEY');
     return null;
   }
 

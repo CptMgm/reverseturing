@@ -42,18 +42,27 @@ export class GeminiLiveService {
       return;
     }
 
-    console.log(`out [GeminiService] Sending to ${session.name}: "${text}"`);
+    console.log(`out [GeminiService] Sending to ${session.name}: "${text.substring(0, 100)}..."`);
 
     // Build context-aware prompt
     let contextualPrompt = text;
 
+    // ✅ FIX #2b: Check if this is a CRITICAL system instruction (silence callout, etc.)
+    const isCriticalInstruction = text.includes('[CRITICAL ALERT]') ||
+                                   text.includes('[SYSTEM]:') ||
+                                   text.includes('SILENT for') ||
+                                   text.includes('didn\'t respond') ||
+                                   text.includes('EXTREMELY suspicious');
+
     // If we have conversation context, provide it for better continuity
-    if (conversationContext && conversationContext.recentMessages) {
+    // BUT only for NORMAL turns, not critical instructions
+    if (conversationContext && conversationContext.recentMessages && !isCriticalInstruction) {
       const recentConvo = conversationContext.recentMessages
         .map(msg => `${msg.speaker}: "${msg.text}"`)
         .join('\n');
 
-      contextualPrompt = `[Recent conversation]\n${recentConvo}\n\n[Your turn to respond naturally. Keep it under 30 words. Be emotional and imperfect. If the human player has been quiet, consider addressing them with a question.]`;
+      // Append text to context, don't replace it
+      contextualPrompt = `[Recent conversation]\n${recentConvo}\n\n${text}`;
     }
 
     // Add user message to history
@@ -136,10 +145,17 @@ export class GeminiLiveService {
       }
 
       let responseText = candidate.content.parts[0].text;
-      console.log(`✅ [GeminiService] Response from ${session.name}: "${responseText}"`);
+      console.log(`✅ [GeminiService] Raw response from ${session.name}: "${responseText}"`);
 
       // NOTE: Pronoun replacement removed - AIs now correctly use "YOU" via prompt instructions
       // The prompts explicitly teach correct pronoun usage with examples
+
+      // ✅ FIX #5: Strip leaked system instructions
+      responseText = this.stripLeakedInstructions(responseText);
+
+      if (responseText !== candidate.content.parts[0].text) {
+        console.log(`🧹 [GeminiService] Cleaned response from ${session.name}: "${responseText}"`);
+      }
 
       // Add model response to history
       session.history.push({ role: "model", parts: [{ text: responseText }] });
@@ -220,6 +236,34 @@ export class GeminiLiveService {
   async broadcastText(text, playerIds) {
     const promises = playerIds.map(id => this.sendText(text, id));
     await Promise.all(promises);
+  }
+
+  /**
+   * ✅ FIX #5: Strip leaked system instructions from AI responses
+   * Gemini sometimes outputs bracketed meta-instructions that should be hidden
+   */
+  stripLeakedInstructions(text) {
+    if (!text) return text;
+
+    let cleaned = text;
+
+    // Remove [SYSTEM ANNOUNCEMENT]: prefix
+    cleaned = cleaned.replace(/\[SYSTEM ANNOUNCEMENT\]:\s*/gi, '');
+
+    // Remove bracketed meta-commentary at end
+    // Matches: [Your turn to speak...], [Be aggressive...], [Only X, Y, Z remain], etc.
+    cleaned = cleaned.replace(/\s*\[(?:Your turn|Be |Only .* remain|Note:|SYSTEM|CRITICAL).*?\]\s*$/gi, '');
+
+    // Remove any remaining standalone bracketed instructions (on their own line)
+    cleaned = cleaned.replace(/^\s*\[(?:Your turn|Be |Only|Note:|SYSTEM|CRITICAL).*?\]\s*$/gim, '');
+
+    // Remove multiple [bracketed] instructions in a row
+    cleaned = cleaned.replace(/(\s*\[.*?\]\s*){2,}/g, ' ');
+
+    // Trim extra whitespace
+    cleaned = cleaned.trim().replace(/\s+/g, ' ');
+
+    return cleaned;
   }
 }
 

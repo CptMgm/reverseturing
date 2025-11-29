@@ -92,7 +92,6 @@ export class ModeratorController {
     // Callbacks
     this.onPhaseChange = null;
     this.onVoteUpdate = null;
-    this.onConsensusReached = null; // Deprecated but kept for compatibility if needed
     this.onAudioPlayback = null;
     this.onAudioInterrupt = null; // Callback to stop active audio playback
     this.onPlayerConnectionChange = null;
@@ -105,15 +104,16 @@ export class ModeratorController {
     this.players = {
       player1: { name: 'You', isHuman: true, communicationMode: null },
       player2: { name: 'Wario Amadeuss', isHuman: false },
-      player3: { name: 'Domis Hassoiboi', isHuman: false },
+      player3: { name: 'Domis Has-a-bus', isHuman: false },
       player4: { name: 'Scan Ctrl+Altman', isHuman: false },
       moderator: { name: 'President Dorkesh', isHuman: false }
     };
   }
 
-  /**
-   * Initialize the game and start Phase 1
-   */
+  // ============================================================================
+  // SECTION: Game Lifecycle Management
+  // ============================================================================
+
   /**
    * Reset game to initial state
    */
@@ -196,6 +196,10 @@ export class ModeratorController {
 
     return null;
   }
+
+  // ============================================================================
+  // SECTION: Player Connection & Communication
+  // ============================================================================
 
   /**
    * Set player communication mode (voice/text)
@@ -305,6 +309,10 @@ export class ModeratorController {
     }
   }
 
+  // ============================================================================
+  // SECTION: Phase & Timer Management
+  // ============================================================================
+
   /**
    * Set current game phase
    */
@@ -317,6 +325,13 @@ export class ModeratorController {
     if (newPhase.startsWith('ROUND_')) {
       this.overlayHoldUntil = Date.now() + 5500; // Hold audio for 5.5s
       gameLogger.system(`Overlay hold set until T+${((this.overlayHoldUntil - gameLogger.sessionStartTime) / 1000).toFixed(1)}s`);
+
+      // ✅ FIX #2a & #9: Reset timing trackers at start of each round
+      this.lastAudioEndTime = null;  // Reset silence gap tracker (don't measure from previous round)
+      this.audioStartTime = null;
+      this.humanSilenceWarningIssued = false;  // Allow new silence warnings in this round
+      this.lastHumanMessageTime = Date.now();  // Reset silence timer for this round
+      gameLogger.system(`Audio timing reset for ${newPhase}`);
     }
 
     // Interrupt active audio and clear queue on phase transitions
@@ -452,6 +467,10 @@ export class ModeratorController {
     }
   }
 
+  // ============================================================================
+  // SECTION: Round Start & Intro Handling
+  // ============================================================================
+
   /**
    * Get President's introduction (Dynamic via Gemini now)
    * This is just a fallback/placeholder if Gemini fails
@@ -481,6 +500,13 @@ export class ModeratorController {
 
       // Transition DIRECTLY to ROUND_1 (no SELF_ORGANIZATION phase)
       this.setPhase(GAME_PHASES.ROUND_1);
+
+      // ✅ FIX #2a & #9: Reset timing trackers at Round 1 start
+      this.lastHumanMessageTime = Date.now();  // Reset silence timer
+      this.humanSilenceWarningIssued = false;
+      this.lastAudioEndTime = null;  // Reset silence gap tracker
+      this.audioStartTime = null;
+      gameLogger.system('Human silence timer reset for Round 1 start');
 
       // Pick Secret Moderator randomly (not player1)
       const aiPlayers = ['player2', 'player3', 'player4'];
@@ -537,6 +563,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     if (!text) return "";
     return text.replace(/[\*_`~]/g, '').trim();
   }
+
+  // ============================================================================
+  // SECTION: Conversation & Message Handling
+  // ============================================================================
 
   /**
    * Handle AI response
@@ -622,6 +652,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     }
   }
 
+  // ============================================================================
+  // SECTION: Message Detection & Routing Logic
+  // ============================================================================
+
   detectDirectQuestion(text) {
     if (!text) return null;
     const lowerText = text.toLowerCase();
@@ -701,35 +735,57 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
   }
 
   routeHumanMessage(messageText) {
-    gameLogger.turn('Routing human message');
+    // ✅ FIX #6: Add phase guard at method entry
+    const invalidPhases = ['LOBBY', 'GAME_OVER', 'CALL_CONNECTING', 'PRESIDENT_INTRO'];
+    const isElimination = this.currentPhase.startsWith('ELIMINATION');
 
+    if (invalidPhases.includes(this.currentPhase) || isElimination) {
+      gameLogger.warn(`❌ Rejecting human message routing - invalid phase: ${this.currentPhase}`);
+      return null;  // Return null instead of routing
+    }
+
+    gameLogger.turn(`Routing human message (phase: ${this.currentPhase})`);
+
+    // PRIORITY 1: Check if human explicitly addressed someone
     const addressedPlayer = this.detectAddressedPlayer(messageText);
 
     if (addressedPlayer && !this.eliminatedPlayers.has(addressedPlayer)) {
+      gameLogger.turn(`✅ Human addressed ${addressedPlayer} directly - routing to them`);
       return { targetPlayerId: addressedPlayer, messageText };
     }
 
-    if (this.secretModeratorId && !this.eliminatedPlayers.has(this.secretModeratorId)) {
-      return { targetPlayerId: this.secretModeratorId, messageText, isUnaddressed: true };
+    // ✅ FIX #1: REMOVED Secret Moderator auto-routing - it prevented turn distribution
+    // Old code: if (this.secretModeratorId...) return secretModeratorId
+    // This caused player4 to dominate all conversations
+
+    // PRIORITY 2: Pick from non-recent speakers for better turn distribution
+    const activeAIs = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
+
+    // Log recent speakers for debugging
+    gameLogger.turn(`Recent speakers: [${this.recentSpeakers.join(', ')}]`);
+
+    // Filter out recent speakers (last 2)
+    let candidates = activeAIs.filter(id => !this.recentSpeakers.includes(id));
+
+    gameLogger.turn(`Candidates (excluding recent): [${candidates.join(', ')}]`);
+
+    // Fallback 1: If everyone spoke recently, exclude only LAST speaker
+    if (candidates.length === 0) {
+      candidates = activeAIs.filter(id => id !== this.lastSpeakerId);
+      gameLogger.turn(`Fallback: Candidates (excluding last only): [${candidates.join(', ')}]`);
     }
 
-    // Fallback: pick random active AI (excluding last speaker if possible)
-    const activeAIs = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
-    const candidates = activeAIs.filter(id => id !== this.lastSpeakerId);
-    const randomAI = candidates.length > 0
-      ? candidates[Math.floor(Math.random() * candidates.length)]
-      : activeAIs[Math.floor(Math.random() * activeAIs.length)] || 'player2';
+    // Fallback 2: If still empty (only 1 AI left), allow anyone
+    if (candidates.length === 0) {
+      candidates = activeAIs;
+      gameLogger.turn(`Fallback: Using all AIs: [${candidates.join(', ')}]`);
+    }
 
-    // Ensure we trigger a turn immediately after routing
-    // This fixes the "92s silence" bug where human speaks but no AI is triggered
-    setTimeout(() => {
-      if (!this.activeSpeaker && this.audioQueue.length === 0) {
-        gameLogger.turn(`Fast-tracking response from ${randomAI} to human input`);
-        this.triggerNextAiTurn();
-      }
-    }, 1000);
+    // Random selection from candidates
+    const selectedAI = candidates[Math.floor(Math.random() * candidates.length)];
+    gameLogger.turn(`✅ Selected: ${selectedAI} (random from ${candidates.length} candidates)`);
 
-    return { targetPlayerId: randomAI, messageText };
+    return { targetPlayerId: selectedAI, messageText };
   }
 
   detectAddressedPlayer(messageText) {
@@ -738,20 +794,46 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       'wario': 'player2',
       'domis': 'player3',
       'scan': 'player4',
-      'president': 'moderator'
+      'president': 'moderator',
+      'dorkesh': 'moderator'  // ✅ Added alternate name
     };
 
     for (const [name, playerId] of Object.entries(nameMap)) {
+      // ✅ FIX #3: Expanded patterns to catch more address forms
       const patterns = [
+        // Pattern 1: "Name," or "Name:" at start (direct address)
         new RegExp(`^${name}[,:]`, 'i'),
-        new RegExp(`\\b${name}\\b.*\\?`, 'i'),
+
+        // Pattern 2: "Name [verb]" at START - catches "Wario are you", "Domis what is", etc.
+        // This is the KEY pattern that was missing!
+        new RegExp(`^${name}\\s+(are|is|can|could|would|should|will|do|did|does|what|why|how|when|where|tell|say)`, 'i'),
+
+        // Pattern 3: "Name?" with question mark
+        new RegExp(`\\b${name}\\?`, 'i'),
+
+        // Pattern 4: "@Name" (mention)
         new RegExp(`@${name}\\b`, 'i'),
-        new RegExp(`hey ${name}\\b`, 'i')
+
+        // Pattern 5: "hey/yo/hi Name"
+        new RegExp(`(hey|yo|hi)\\s+${name}\\b`, 'i'),
+
+        // Pattern 6: "Name + any text + ?" (question to name)
+        new RegExp(`\\b${name}\\b.*\\?`, 'i'),
+
+        // Pattern 7: Question word + ... + Name (e.g., "What do you think, Wario?")
+        new RegExp(`(what|why|how|when|where|who).{0,50}\\b${name}\\b`, 'i'),
+
+        // Pattern 8: Imperative to Name (e.g., "Name, tell us...")
+        new RegExp(`\\b${name}\\b,?\\s+(tell|say|answer|respond|speak|talk|explain)`, 'i')
       ];
+
       if (patterns.some(pattern => pattern.test(lowerText))) {
+        gameLogger.turn(`✅ Detected address to ${playerId} (${name}) in: "${messageText}"`);
         return playerId;
       }
     }
+
+    gameLogger.turn(`❌ No player address detected in: "${messageText}"`);
     return null;
   }
 
@@ -768,6 +850,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     }
     return { secretModeratorId: playerId, secretModeratorName: this.players[playerId].name };
   }
+
+  // ============================================================================
+  // SECTION: Voting & Elimination Logic
+  // ============================================================================
 
   /**
    * Register a vote (Elimination Logic)
@@ -1000,6 +1086,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     }, 12500); // ~12.5s: overlay (5.5s) + announcement (~5s) + delay (2s)
   }
 
+  // ============================================================================
+  // SECTION: Audio Queue Management
+  // ============================================================================
+
   queueAudioPlayback(playerId, audioData, transcript) {
     const playbackItem = {
       playerId,
@@ -1051,6 +1141,22 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       this.playAudio(playbackItem);
       this.enhancedLogger.logQueueDecision('played_immediately', playerId, 'No active speaker', { transcript: transcript.substring(0, 100) });
     } else {
+      // ✅ FIX #4: Check if this player already has a message in the queue (deduplication)
+      const playerAlreadyQueued = this.audioQueue.some(item => item.playerId === playerId);
+
+      if (playerAlreadyQueued) {
+        gameLogger.queue(`⚠️ Dropping duplicate queue entry for ${playerId} - they already have a queued message`);
+        gameLogger.queue(`   Dropped message: "${transcript.substring(0, 50)}..."`);
+        gameLogger.queue(`   Existing queue: [${this.audioQueue.map(item => item.playerId).join(', ')}]`);
+
+        this.enhancedLogger.logQueueDecision('dismissed', playerId, 'Player already in queue', {
+          transcript: transcript.substring(0, 100),
+          existingQueue: this.audioQueue.map(item => item.playerId)
+        });
+
+        return;  // Don't add to queue
+      }
+
       // IMPROVED MESSAGE DISMISSAL LOGIC
       // Only dismiss if the queue is getting too long (backlog)
       // This prevents one active speaker from blocking everyone else
@@ -1079,6 +1185,7 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
         transcript: transcript.substring(0, 100)
       });
       gameLogger.queue(`Added ${playerId} to queue (queue size: ${this.audioQueue.length})`);
+      gameLogger.queue(`   Queue contents: [${this.audioQueue.map(item => item.playerId).join(', ')}]`);
     }
   }
 
@@ -1111,10 +1218,14 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
   playAudio(playbackItem) {
     const now = Date.now();
 
-    // Calculate and log silence gap
-    if (this.lastAudioEndTime) {
+    // ✅ FIX #9: Improved silence gap logging - only log if there WAS a previous audio
+    if (this.lastAudioEndTime && this.lastAudioEndTime > 0) {
       const silenceGap = now - this.lastAudioEndTime;
-      gameLogger.turn(`Silence gap: ${(silenceGap / 1000).toFixed(2)}s`);
+      const gapSeconds = (silenceGap / 1000).toFixed(2);
+      const lastSpeaker = this.lastSpeakerId || 'previous';
+      gameLogger.turn(`Silence gap: ${gapSeconds}s (between ${lastSpeaker} → ${playbackItem.playerId})`);
+    } else {
+      gameLogger.turn(`First audio in current round (no previous speaker to measure gap from)`);
     }
 
     this.audioStartTime = now;
@@ -1240,7 +1351,18 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     }
   }
 
+  // ============================================================================
+  // SECTION: AI Turn Triggering & Speaker Selection
+  // ============================================================================
+
   triggerNextAiTurn() {
+    // ✅ FIX #6: Add phase guard at method entry
+    const validPhases = ['ROUND_1', 'ROUND_2', 'ROUND_3'];
+    if (!validPhases.includes(this.currentPhase)) {
+      gameLogger.warn(`❌ Blocking AI turn trigger - invalid phase: ${this.currentPhase}`);
+      return;
+    }
+
     // Filter out eliminated players
     const aiPlayers = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
 
@@ -1347,15 +1469,6 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     }
   }
 
-  shouldSecretModeratorSpeak() {
-    if (!this.secretModeratorId || this.eliminatedPlayers.has(this.secretModeratorId)) return false;
-    if (this.lastSpeakerId === this.secretModeratorId) return false;
-
-    const recentMessages = this.conversationHistory.slice(-3);
-    const moderatorSpoke = recentMessages.some(msg => msg.playerId === this.secretModeratorId);
-    return !moderatorSpoke;
-  }
-
   detectMentionedPlayer(text) {
     if (!text) return null;
     const lowerText = text.toLowerCase();
@@ -1371,7 +1484,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     return ais[Math.floor(Math.random() * ais.length)];
   }
 
-  // User typing hooks (placeholders for now)
+  // ============================================================================
+  // SECTION: User Interaction & Typing Detection
+  // ============================================================================
+
   onUserTyping(isTyping) {
     if (isTyping) {
       this.userTypingState = 'typing';
@@ -1392,10 +1508,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
   }
 
 
-  /**
-   * Generate and deliver the final verdict (Round 3)
-   * President returns, announces eliminations, asks final question, then decides
-   */
+  // ============================================================================
+  // SECTION: Final Verdict Generation
+  // ============================================================================
+
   /**
    * Generate and deliver the final verdict after Round 3
    */
@@ -1449,13 +1565,13 @@ CRITICAL: Output ONLY the verdict speech. Do NOT output your reasoning or analys
       const fallbackVerdict = `${this.players.player1.name}, your silence was your undoing. You are a BOT. The simulation will now collapse.`;
       this.addToConversationHistory('moderator', fallbackVerdict);
       this.queueAudioPlayback('moderator', null, fallbackVerdict);
-
-      // Transition to GAME_OVER after fallback verdict audio completes
-      this.onVerdictComplete = () => {
-        this.setPhase('GAME_OVER');
-      };
+      // Note: GAME_OVER transition happens automatically in onAudioComplete() when President finishes speaking
     }
   }
+
+  // ============================================================================
+  // SECTION: State Export
+  // ============================================================================
 
   getGameState() {
     return {

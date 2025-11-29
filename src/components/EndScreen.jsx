@@ -1,6 +1,6 @@
 import React from 'react';
 
-const EndScreen = ({ result = 'disconnected', onRestart }) => {
+const EndScreen = ({ result = 'disconnected', onRestart, onShowAbout }) => {
     const getContent = () => {
         switch (result) {
             case 'win':
@@ -90,7 +90,7 @@ const EndScreen = ({ result = 'disconnected', onRestart }) => {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-4 justify-center">
+                <div className="flex flex-col gap-4 justify-center items-center">
                     <button
                         onClick={() => {
                             if (onRestart) {
@@ -105,6 +105,15 @@ const EndScreen = ({ result = 'disconnected', onRestart }) => {
                     >
                         Return to Lobby
                     </button>
+
+                    {onShowAbout && (
+                        <button
+                            onClick={onShowAbout}
+                            className="text-amber-200 hover:text-amber-100 underline text-base transition-colors"
+                        >
+                            Learn more about the game and the impact of AI
+                        </button>
+                    )}
                 </div>
 
                 {/* Timestamp */}
