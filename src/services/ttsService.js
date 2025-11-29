@@ -1,3 +1,7 @@
+// ⚠️ DEPRECATED - MARKED FOR DELETION
+// This file is no longer used. ttsProvider.js is the active TTS implementation.
+// TODO: Remove this file after confirming no dependencies
+
 // Direct ElevenLabs TTS Service (bypassing Supabase for now)
 class TTSService {
   constructor() {

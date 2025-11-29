@@ -8,7 +8,50 @@ import ModeSelectionModal from './ModeSelectionModal';
 import EndScreen from './EndScreen';
 import AboutPage from './AboutPage';
 
+// Sound effect helpers using Web Audio API
+const playRoundEndBuzzer = () => {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
 
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = 180; // Deep buzzer tone
+        oscillator.type = 'sawtooth';
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.5);
+        console.log('🔊 Round end buzzer played');
+    } catch (e) {
+        console.error('Failed to play round end buzzer:', e);
+    }
+};
+
+const playVotingChime = () => {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = 880; // Higher-pitched chime (A5 note)
+        oscillator.type = 'sine';
+        gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.3);
+        console.log('🔔 Voting chime played');
+    } catch (e) {
+        console.error('Failed to play voting chime:', e);
+    }
+};
 
 const GameRoom = () => {
     const {
@@ -74,6 +117,11 @@ const GameRoom = () => {
             } else if (gameState.phase === 'ROUND_3') {
                 setRoundOverlay({ title: 'FINAL ROUND', subtitle: 'The President Returns' });
                 setTimeout(() => setRoundOverlay(null), 4000);
+            } else if (gameState.phase === 'ELIMINATION_1' || gameState.phase === 'ELIMINATION_2') {
+                // Play round end buzzer immediately
+                playRoundEndBuzzer();
+                // Play voting chime 200ms later (distinct sound)
+                setTimeout(() => playVotingChime(), 200);
             }
             prevPhaseRef.current = gameState.phase;
         }

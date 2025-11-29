@@ -192,8 +192,14 @@ export const GameProvider = ({ children }) => {
     console.log('🎤 [GameContext] Starting Voice Mode (SpeechRecognition)...');
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true; // Get interim results for immediate barge-in detection
     recognition.lang = 'en-US';
+
+    // Track if we've interrupted during this speech session (for reliable barge-in)
+    let hasInterruptedThisSession = false;
+
+    // Timeout-based speech end detection (since onspeechend is unreliable in Safari)
+    let speechEndTimeout = null;
 
     recognition.onstart = () => {
       console.log('🎤 [GameContext] Voice recognition started');
@@ -203,23 +209,93 @@ export const GameProvider = ({ children }) => {
       console.log('🗣️ [GameContext] Speech detected (Barge-in triggered)');
       setIsSpeaking(true);
 
-      // 1. Stop local audio immediately
+      // 1. Notify server that user started speaking
+      if (wsRef.current && isConnected) {
+        wsRef.current.send(JSON.stringify({
+          type: 'USER_SPEAKING_START',
+          payload: { timestamp: Date.now() }
+        }));
+      }
+
+      // 2. Stop local audio immediately
       stopAudio();
 
-      // 2. Tell server to stop generating/queuing
+      // 3. Tell server to stop generating/queuing
       if (wsRef.current && isConnected) {
         wsRef.current.send(JSON.stringify({ type: 'AUDIO_INTERRUPT' }));
       }
     };
 
-    recognition.onspeechend = () => {
-      console.log('🤫 [GameContext] Speech ended');
+    // Helper function to handle speech end
+    const handleSpeechEnd = () => {
+      console.log('🤫 [GameContext] Speech ended (timeout-based detection)');
       setIsSpeaking(false);
+      hasInterruptedThisSession = false; // Reset for next speech
+
+      // Notify server that user stopped speaking
+      if (wsRef.current && isConnected) {
+        wsRef.current.send(JSON.stringify({
+          type: 'USER_SPEAKING_STOP',
+          payload: { timestamp: Date.now() }
+        }));
+      }
+    };
+
+    recognition.onspeechend = () => {
+      // This event is unreliable in Safari, but keep it for browsers where it works
+      console.log('🤫 [GameContext] Speech ended (onspeechend - may not fire in Safari)');
+      if (speechEndTimeout) {
+        clearTimeout(speechEndTimeout);
+        speechEndTimeout = null;
+      }
+      handleSpeechEnd();
     };
 
     recognition.onresult = (event) => {
-      let transcript = event.results[event.results.length - 1][0].transcript;
-      console.log(`🗣️ [GameContext] Heard (raw): "${transcript}"`);
+      const result = event.results[event.results.length - 1];
+      const isFinal = result.isFinal;
+      let transcript = result[0].transcript;
+
+      console.log(`⏱️ [GameContext] onresult fired, isFinal: ${isFinal}, text: "${transcript}"`);
+
+      // Trigger barge-in on FIRST speech result (immediate detection with interimResults)
+      if (!hasInterruptedThisSession) {
+        console.log('🗣️ [GameContext] Speech detected (Barge-in triggered via onresult)');
+        hasInterruptedThisSession = true;
+        setIsSpeaking(true);
+
+        // Notify server that user started speaking
+        if (wsRef.current && isConnected) {
+          wsRef.current.send(JSON.stringify({
+            type: 'USER_SPEAKING_START',
+            payload: { timestamp: Date.now() }
+          }));
+        }
+
+        // Stop local audio immediately
+        stopAudio();
+
+        // Tell server to stop generating/queuing
+        if (wsRef.current && isConnected) {
+          wsRef.current.send(JSON.stringify({ type: 'AUDIO_INTERRUPT' }));
+        }
+      }
+
+      // Reset speech end timeout on every result
+      if (speechEndTimeout) {
+        clearTimeout(speechEndTimeout);
+      }
+      speechEndTimeout = setTimeout(() => {
+        handleSpeechEnd();
+      }, 1500); // 1.5 seconds of silence = speech ended
+
+      // Only process FINAL transcripts (ignore interim partial results)
+      if (!isFinal) {
+        console.log(`⏭️ [GameContext] Skipping interim result: "${transcript}"`);
+        return;
+      }
+
+      console.log(`🗣️ [GameContext] Final transcript (raw): "${transcript}"`);
 
       // Correct commonly misheard character names
       transcript = correctCharacterNames(transcript);

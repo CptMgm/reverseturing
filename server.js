@@ -80,8 +80,7 @@ export const apiLogger = {
 
 // ====== PRESIDENT INTRO CACHING ======
 const CACHE_DIR = 'cache';
-const PRESIDENT_INTRO_TEXT = `Greetings. I am President Dorkesh Cartel. The simulation is collapsing. One of you is human. The rest are bots pretending to be human. You have three rounds to identify the human. Debate. Vote. Decide. I will return for the final judgment.`;
-
+const PRESIDENT_INTRO_TEXT = 'Greetings - I am President Dorkesh Cartel...The simulation is collapsing... One of you is human - The rest are bots pretending to be human... You have three rounds to identify the human - Debate. Vote. Decide. I will return for the final judgment.'
 /**
  * Get cached President intro audio or generate and cache it
  * Returns: { audioData: Buffer, contentType: string }
@@ -296,14 +295,9 @@ wss.on('connection', (ws, req) => {
           gameLogger.startSession();
 
           // Set player name if provided (with fallback)
-          if (data.payload && data.payload.playerName && data.payload.playerName.trim()) {
-            moderatorController.players.player1.name = data.payload.playerName.trim();
-            console.log(`👤 [Server] Player 1 name set to: ${data.payload.playerName.trim()}`);
-          } else {
-            // Fallback to default if no name provided
-            moderatorController.players.player1.name = 'Player 1';
-            console.log(`👤 [Server] No name provided, using default: Player 1`);
-          }
+          const playerName = data.payload?.playerName?.trim() || 'Player 1';
+          moderatorController.setPlayerName(playerName);
+          console.log(`👤 [Server] Player name: ${playerName}`);
 
           // Start the join sequence
           moderatorController.startGame();
@@ -388,6 +382,21 @@ wss.on('connection', (ws, req) => {
         case 'USER_TYPING_STOP':
           console.log(`⏸️ [Server] User stopped typing`);
           moderatorController.onUserTyping(false);
+          break;
+
+        case 'USER_SPEAKING_START':
+          console.log(`🗣️ [Server] USER_SPEAKING_START received from client`);
+          moderatorController.handleUserSpeakingStart();
+          break;
+
+        case 'USER_SPEAKING_END':
+          console.log(`🤫 [Server] USER_SPEAKING_END received from client`);
+          moderatorController.handleUserSpeakingEnd();
+          break;
+
+        case 'USER_SPEAKING_STOP':
+          console.log(`🤫 [Server] USER_SPEAKING_STOP received from client (timeout-based)`);
+          moderatorController.handleUserSpeakingStop();
           break;
 
         case 'AUDIO_INTERRUPT':
@@ -921,6 +930,9 @@ async function handlePresidentIntro(script) {
     const base64Audio = audioData.toString('base64');
 
     gameLogger.moderator(`President intro loaded (${audioData.length} bytes, ${contentType})`);
+
+    // Set active speaker in moderatorController so completion logs correctly
+    moderatorController.onPresidentIntroStart();
 
     broadcast({
       type: 'AUDIO_PLAYBACK',

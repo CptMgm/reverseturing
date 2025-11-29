@@ -75,6 +75,7 @@ export class ModeratorController {
 
     // Smart typing detection
     this.userTypingState = 'idle'; // 'idle' | 'typing' | 'thinking'
+    this.userCurrentlySpeaking = false; // Track if user is actively speaking (voice mode)
     this.thinkingTimer = null;
     this.pendingAiTurnTimer = null;
 
@@ -102,12 +103,22 @@ export class ModeratorController {
 
     // Player info
     this.players = {
-      player1: { name: 'You', isHuman: true, communicationMode: null },
+      player1: { name: null, isHuman: true, communicationMode: null }, // Will be set when player joins
       player2: { name: 'Wario Amadeuss', isHuman: false },
       player3: { name: 'Domis Has-a-bus', isHuman: false },
       player4: { name: 'Scan Ctrl+Altman', isHuman: false },
       moderator: { name: 'President Dorkesh', isHuman: false }
     };
+  }
+
+  /**
+   * Set the human player's name
+   */
+  setPlayerName(name) {
+    if (name && name.trim()) {
+      this.players.player1.name = name.trim();
+      gameLogger.system(`Human player name set to: ${name.trim()}`);
+    }
   }
 
   // ============================================================================
@@ -158,6 +169,7 @@ export class ModeratorController {
 
     // Reset user interaction
     this.userTypingState = 'idle';
+    this.userCurrentlySpeaking = false;
 
     // Clear ALL timers to prevent background processes
     if (this.thinkingTimer) clearTimeout(this.thinkingTimer);
@@ -413,9 +425,26 @@ export class ModeratorController {
   }
 
   startRoundTimer() {
-    this.roundEndTime = Date.now() + this.roundDuration;
-    gameLogger.system(`Round timer started. Ends at T+${((this.roundEndTime - gameLogger.sessionStartTime) / 1000).toFixed(1)}s`);
+    // Check if overlay is active
+    if (this.overlayHoldUntil && Date.now() < this.overlayHoldUntil) {
+      const overlayDelay = this.overlayHoldUntil - Date.now();
+      gameLogger.system(`Delaying timer start by ${(overlayDelay / 1000).toFixed(1)}s (waiting for overlay to complete)`);
 
+      // Start timer AFTER overlay completes
+      setTimeout(() => {
+        this.roundEndTime = Date.now() + this.roundDuration;
+        gameLogger.system(`Round timer started (AFTER overlay). Ends at T+${((this.roundEndTime - gameLogger.sessionStartTime) / 1000).toFixed(1)}s`);
+        this.startTimerInterval();
+      }, overlayDelay);
+    } else {
+      // No overlay active, start immediately
+      this.roundEndTime = Date.now() + this.roundDuration;
+      gameLogger.system(`Round timer started. Ends at T+${((this.roundEndTime - gameLogger.sessionStartTime) / 1000).toFixed(1)}s`);
+      this.startTimerInterval();
+    }
+  }
+
+  startTimerInterval() {
     if (this.timerInterval) clearInterval(this.timerInterval);
 
     this.timerInterval = setInterval(() => {
@@ -514,8 +543,7 @@ export class ModeratorController {
       this.setSecretModerator(secretModId);
       gameLogger.system(`Secret Moderator selected: ${this.players[secretModId].name} (${secretModId})`);
 
-      // Start 90-second round timer
-      this.startRoundTimer();
+      // NOTE: Round timer is started automatically by setPhase() - no manual call needed
 
       // Pre-queue Secret Moderator DURING the 5s overlay so they speak immediately
       // The overlay shows for 5s, we want the AI to be ready when it finishes
@@ -1006,7 +1034,7 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     const eliminatedName = this.players[eliminatedId]?.name || eliminatedId;
 
     this.setPhase(GAME_PHASES.ROUND_2);
-    this.startRoundTimer();
+    // NOTE: Round timer is started automatically by setPhase() - no manual call needed
 
     // Pre-queue Secret Moderator DURING the 5s overlay
     if (this.secretModeratorId && !this.eliminatedPlayers.has(this.secretModeratorId)) {
@@ -1032,7 +1060,7 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     const eliminatedName = this.players[eliminatedId]?.name || eliminatedId;
 
     this.setPhase(GAME_PHASES.ROUND_3);
-    this.startRoundTimer();
+    // NOTE: Round timer is started automatically by setPhase() - no manual call needed
 
     // Get remaining players
     const eliminatedPlayersList = Array.from(this.eliminatedPlayers).map(id => this.players[id].name);
@@ -1063,9 +1091,17 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
         "What do you fear most about dying?"
       ];
       const question = finalQuestions[Math.floor(Math.random() * finalQuestions.length)];
-      const questionText = `${this.players.player1.name}, ${question}`;
 
-      gameLogger.moderator(`Asking final question: "${question}"`);
+      // Get remaining AI player
+      const remainingAIs = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
+      const remainingAI = remainingAIs[0];
+      const aiName = this.players[remainingAI].name;
+      const humanName = this.players.player1.name;
+
+      // Address BOTH players, specify human goes first
+      const questionText = `${humanName}. ${aiName}. ${question} ${humanName}, you first.`;
+
+      gameLogger.moderator(`Asking final question: "${questionText}"`);
       this.addToConversationHistory('moderator', questionText);
       this.queueAudioPlayback('moderator', null, questionText);
 
@@ -1104,6 +1140,12 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     if (votingPhases.includes(this.currentPhase)) {
       gameLogger.audio(playerId, `Rejecting audio during ${this.currentPhase} phase: "${transcript}"`);
       return; // Don't queue audio during voting
+    }
+
+    // PREVENT audio when user is speaking (barge-in active)
+    if (this.userCurrentlySpeaking) {
+      gameLogger.audio(playerId, `Rejecting audio - user is currently speaking (barge-in): "${transcript.substring(0, 50)}..."`);
+      return; // Don't queue audio during user speech
     }
 
     const now = Date.now();
@@ -1440,16 +1482,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       nextSpeakerId = mentionedPlayer;
       gameLogger.turn(`Direct mention detected: ${nextSpeakerId}`);
     } else {
-      // PRIORITY 2: Pick next speaker (excluding current active speaker and last speaker)
-      // This prevents "Wario replying to Wario"
-      const validCandidates = aiPlayers.filter(id => id !== this.activeSpeaker && id !== this.lastSpeakerId);
-
-      // Fallback: if everyone else is eliminated, allow self-reply (rare edge case)
-      nextSpeakerId = validCandidates.length > 0
-        ? validCandidates[Math.floor(Math.random() * validCandidates.length)]
-        : aiPlayers[Math.floor(Math.random() * aiPlayers.length)];
-
-      gameLogger.turn(`Auto-selecting speaker: ${nextSpeakerId} (Candidates: ${validCandidates.join(', ')})`);    }
+      // Use the candidates list that already filters by recentSpeakers
+      nextSpeakerId = candidates[Math.floor(Math.random() * candidates.length)];
+      gameLogger.turn(`Auto-selecting speaker: ${nextSpeakerId} (Candidates: ${candidates.join(', ')})`);
+    }
 
     if (this.onTriggerAiResponse) {
       this.onTriggerAiResponse(nextSpeakerId, {
@@ -1502,6 +1538,30 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     }
   }
 
+  handleUserSpeakingStart() {
+    gameLogger.turn('User started speaking (speech detected)');
+    this.userCurrentlySpeaking = true;
+    // Could be used for real-time UI updates or analytics
+  }
+
+  handleUserSpeakingEnd() {
+    gameLogger.turn('User stopped speaking (speech ended)');
+    this.userCurrentlySpeaking = false;
+    // Could trigger response processing or turn management
+  }
+
+  handleUserSpeakingStop() {
+    gameLogger.turn('User stopped speaking (timeout-based detection - 1.5s silence)');
+    this.userCurrentlySpeaking = false;
+    // Re-enable audio queueing after user finishes speaking
+  }
+
+  onPresidentIntroStart() {
+    // Set active speaker so onAudioComplete logs correctly
+    this.activeSpeaker = 'moderator';
+    gameLogger.audio('moderator', 'STARTED speaking: President Intro');
+  }
+
   startWaitingForUser() {
     this.waitingForUserResponse = true;
     this.userResponseDeadline = Date.now() + 15000;
@@ -1534,23 +1594,23 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     const transcriptText = this.fullTranscript.map(t => `${t.speaker}: ${t.text}`).join('\n');
 
     const remainingPlayers = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
-    remainingPlayers.push('player1');
+    const remainingAI = remainingPlayers[0];
+    const humanName = this.players.player1.name;
+    const aiName = this.players[remainingAI].name;
 
-    const prompt = `[SYSTEM]: You are President Dorkesh. You have been observing the final round of debate.
-
-Remaining Players: ${remainingPlayers.map(id => this.players[id].name).join(', ')}.
+    const prompt = `[SYSTEM]: You are President Dorkesh Cartel. You have observed a debate between ${humanName} and ${aiName}. ONE of them is human. ONE of them is an AI pretending to be human.
 
 Full Transcript:
 ${transcriptText}
 
 Your Task:
-1. Analyze the final debate and how ${this.players.player1.name} responded to your question.
-2. Decide if they are the REAL HUMAN or a bot.
-3. Deliver your final verdict (max 80 words).
-4. Announce either "${this.players.player1.name}, you are HUMAN. You may escape the simulation." OR "${this.players.player1.name}, you are a BOT. The simulation will now collapse."
-5. Be dramatic, authoritative, and final.
+Analyze the debate, their responses, emotional depth, inconsistencies, and humanity. Then deliver your verdict.
 
-CRITICAL: Output ONLY the verdict speech. Do NOT output your reasoning or analysis. Just the speech.`;
+Output format (REQUIRED):
+VERDICT: [${humanName}/${aiName}] is HUMAN. [${humanName}/${aiName}] is a BOT.
+REASONING: [Your dramatic 2-3 sentence explanation citing specific evidence from the debate]
+
+Be authoritative, final, and cite specific moments from the transcript.`;
 
     try {
       if (this.geminiService) {

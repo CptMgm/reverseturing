@@ -33,6 +33,59 @@ const GOOGLE_VOICES = {
 const TTS_PROVIDER = process.env.TTS_PROVIDER?.toLowerCase() || 'elevenlabs';
 
 /**
+ * Get voice settings for each character
+ * Each character has unique voice parameters for better personality expression
+ */
+function getVoiceSettings(playerId) {
+  switch (playerId) {
+    case 'moderator':
+      return {
+        stability: 0.70,
+        similarity_boost: 0.85,
+        style: 0.15,
+        speed: 0.93,
+        use_speaker_boost: true
+      };
+
+    case 'player2': // Wario
+      return {
+        stability: 0.35,
+        similarity_boost: 0.70,
+        style: 0.60,
+        speed: 1.00,
+        use_speaker_boost: true
+      };
+
+    case 'player3': // Domis
+      return {
+        stability: 0.45,
+        similarity_boost: 0.80,
+        style: 0.35,
+        speed: 0.94,
+        use_speaker_boost: true
+      };
+
+    case 'player4': // Scan
+      return {
+        stability: 0.55,
+        similarity_boost: 0.75,
+        style: 0.10,
+        speed: 0.92,
+        use_speaker_boost: true
+      };
+
+    default:
+      return {
+        stability: 0.50,
+        similarity_boost: 0.75,
+        style: 0.00,
+        speed: 1.0,
+        use_speaker_boost: true
+      };
+  }
+}
+
+/**
  * Generate TTS using ElevenLabs
  * Returns a readable stream of audio chunks
  */
@@ -72,7 +125,7 @@ async function generateTTSElevenLabs(text, playerId, apiLogger) {
         body: JSON.stringify({
           text: text,
           model_id: "eleven_monolingual_v1",
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+          voice_settings: getVoiceSettings(playerId)
         })
       }
     );
