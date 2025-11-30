@@ -91,6 +91,13 @@ const GameRoom = () => {
         }
     }, [gameState.conversationHistory]);
 
+    // Auto-close chat in voice mode
+    useEffect(() => {
+        if (communicationMode === 'voice') {
+            setIsChatOpen(false);
+        }
+    }, [communicationMode]);
+
     // Check if player gets eliminated
     useEffect(() => {
         if (gameState.eliminatedPlayers?.includes('player1')) {
@@ -410,52 +417,41 @@ const GameRoom = () => {
                 backgroundSize: '24px 24px'
             }} />
 
-            {/* Header */}
-            <div className="relative z-20 bg-gray-900/90 border-b border-slate-700 p-4 flex justify-between items-center shadow-lg">
-                <div className="flex items-center gap-6">
-                    <div className="font-mono text-amber-200 font-semibold flex items-center gap-2">
-                        <div className="w-2 h-2 bg-amber-200 rounded-full" />
-                        <span className="text-sm text-slate-400">STATUS:</span>
-                        <span>{gameState.phase}</span>
-                    </div>
-
+            {/* Bottom Left: Round Indicator and Timer (Horizontal) */}
+            {(gameState.phase.startsWith('ROUND') || gameState.phase.startsWith('ELIMINATION')) && (
+                <div className="fixed bottom-6 left-6 z-50 flex items-center gap-4 pointer-events-none">
                     {/* Round Indicator */}
-                    {(gameState.phase.startsWith('ROUND') || gameState.phase.startsWith('ELIMINATION')) && (
-                        <div className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-amber-100 font-mono text-sm font-semibold">
-                            ROUND {gameState.phase.includes('1') ? '1' : gameState.phase.includes('2') ? '2' : '3'} / 3
+                    <div className="px-4 py-2 bg-slate-800/90 border border-slate-600 rounded-lg text-amber-100 font-mono text-sm font-semibold backdrop-blur-sm shadow-xl pointer-events-auto">
+                        ROUND {gameState.phase.includes('1') ? '1' : gameState.phase.includes('2') ? '2' : '3'} / 3
+                    </div>
+
+                    {/* Timer Display - Show during round phases */}
+                    {gameState.phase.startsWith('ROUND') && (
+                        <div className="bg-slate-800/90 px-6 py-3 rounded-lg border border-slate-600 flex items-center gap-3 backdrop-blur-sm shadow-xl pointer-events-auto">
+                            <div className={`w-2 h-2 rounded-full ${gameState.roundEndTime && (gameState.roundEndTime - Date.now()) < 10000
+                                ? 'bg-red-400'
+                                : 'bg-amber-200'
+                                }`} />
+                            <span className="font-mono text-2xl font-bold tracking-wider text-amber-100">
+                                {(() => {
+                                    if (!gameState.roundEndTime) return '0:00';
+                                    const remaining = Math.max(0, Math.ceil((gameState.roundEndTime - Date.now()) / 1000));
+                                    const mins = Math.floor(remaining / 60);
+                                    const secs = remaining % 60;
+                                    return `${mins}:${secs.toString().padStart(2, '0')}`;
+                                })()}
+                            </span>
                         </div>
                     )}
                 </div>
+            )}
 
-                {/* Timer Display */}
-                {gameState.roundEndTime && (
-                    <div className="absolute left-1/2 transform -translate-x-1/2 bg-slate-800 px-6 py-2 rounded-b-lg border-x border-b border-slate-700 flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${(gameState.roundEndTime - Date.now()) < 10000
-                            ? 'bg-red-400'
-                            : 'bg-amber-200'
-                            }`} />
-                        <span className="font-mono text-2xl font-bold tracking-wider text-amber-100">
-                            {(() => {
-                                const remaining = Math.max(0, Math.ceil((gameState.roundEndTime - Date.now()) / 1000));
-                                const mins = Math.floor(remaining / 60);
-                                const secs = remaining % 60;
-                                return `${mins}:${secs.toString().padStart(2, '0')}`;
-                            })()}
-                        </span>
-                    </div>
-                )}
-
-                <div className="flex items-center gap-4">
-                    {systemError && (
-                        <div className="bg-red-700 text-white px-4 py-2 rounded-lg font-semibold text-sm border border-red-600">
-                            ⚠️ {systemError}
-                        </div>
-                    )}
-                    <div className="font-mono text-xs text-slate-500 bg-slate-800 px-3 py-1 rounded border border-slate-700">
-                        <span className="text-slate-600">SESSION:</span> <span className="text-amber-200">{Math.random().toString(36).substr(2, 9).toUpperCase()}</span>
-                    </div>
+            {/* System Error (if any) - Fixed Top Center */}
+            {systemError && (
+                <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 bg-red-700/90 text-white px-6 py-3 rounded-lg font-semibold text-sm border border-red-600 backdrop-blur-sm shadow-xl pointer-events-auto">
+                    ⚠️ {systemError}
                 </div>
-            </div>
+            )}
 
             {/* Main Content - Google Meet Style Layout */}
             <div className="flex-1 flex relative overflow-hidden">
@@ -541,16 +537,20 @@ const GameRoom = () => {
                                             type="text"
                                             value={inputText}
                                             onChange={(e) => handleInputChange(e.target.value)}
-                                            placeholder="Type a message..."
+                                            placeholder={communicationMode === 'voice' ? "Voice mode active..." : "Type a message..."}
                                             className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white
                                                      placeholder-slate-500 focus:outline-none focus:border-amber-200/50
-                                                     transition-all duration-200 text-sm min-w-0"
-                                            autoFocus
+                                                     transition-all duration-200 text-sm min-w-0
+                                                     disabled:opacity-50 disabled:cursor-not-allowed"
+                                            disabled={communicationMode === 'voice'}
+                                            autoFocus={communicationMode !== 'voice'}
                                         />
                                         <button
                                             type="submit"
+                                            disabled={communicationMode === 'voice'}
                                             className="bg-slate-700 hover:bg-slate-600 px-6 py-3 rounded-lg font-semibold
-                                                     transition-all duration-200 text-sm text-amber-100 border border-slate-600 whitespace-nowrap shadow-lg"
+                                                     transition-all duration-200 text-sm text-amber-100 border border-slate-600 whitespace-nowrap shadow-lg
+                                                     disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-700"
                                         >
                                             Send
                                         </button>
