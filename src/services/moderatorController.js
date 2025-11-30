@@ -78,6 +78,7 @@ export class ModeratorController {
     this.userCurrentlySpeaking = false; // Track if user is actively speaking (voice mode)
     this.thinkingTimer = null;
     this.pendingAiTurnTimer = null;
+    this.humanResponseDeadlineTimer = null; // Timer for 7-second human response deadline
 
     // Timing tracking for conversation flow analysis
     this.audioStartTime = null;
@@ -174,6 +175,7 @@ export class ModeratorController {
     // Clear ALL timers to prevent background processes
     if (this.thinkingTimer) clearTimeout(this.thinkingTimer);
     if (this.pendingAiTurnTimer) clearTimeout(this.pendingAiTurnTimer);
+    if (this.humanResponseDeadlineTimer) clearTimeout(this.humanResponseDeadlineTimer);
     if (this.userTypingTimer) clearTimeout(this.userTypingTimer);
     if (this.audioTimeoutId) clearTimeout(this.audioTimeoutId);
     if (this.audioMaxTimeoutId) clearTimeout(this.audioMaxTimeoutId);
@@ -556,7 +558,7 @@ export class ModeratorController {
           const secretModName = this.players[secretModId].name;
           const humanName = this.players.player1.name;
 
-          const prompt = `Round 1 just started. As Secret Moderator, you go first. Jump right in - ask ${humanName} a direct, challenging question. Stay in character as ${secretModName}. Keep under 25 words. Be impulsive and in-character.`;
+          const prompt = `Round 1 just started. This is the OPENING MESSAGE - no one has spoken yet. You speak FIRST. Directly address ${humanName} (the human player) with a challenging question to expose if they're a bot. Do NOT reference or address other AI players (Wario, Domis, Scan) - they haven't said anything yet. Stay in character as ${secretModName}. Keep under 25 words. Be impulsive and in-character.`;
 
           gameLogger.ai(secretModId, `Pre-queueing Secret Moderator (${secretModName}) to open Round 1`);
           this.geminiService.sendText(prompt, secretModId);
@@ -1242,6 +1244,17 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     const interruptedSpeaker = this.activeSpeaker;
     this.activeSpeaker = null;
 
+    // 2b. Remove the interrupted message from conversation history
+    // The user never heard it fully, so AIs shouldn't respond to it
+    if (interruptedSpeaker && this.conversationHistory && this.conversationHistory.length > 0) {
+      const lastMsg = this.conversationHistory[this.conversationHistory.length - 1];
+      // Check if the last message in history is from the interrupted speaker
+      if (lastMsg.playerId === interruptedSpeaker || lastMsg.speaker === this.players[interruptedSpeaker]?.name) {
+        const removed = this.conversationHistory.pop();
+        gameLogger.queue(`🗑️ Removed interrupted message from history: "${removed.text?.substring(0, 50) || removed.transcript?.substring(0, 50)}..."`);
+      }
+    }
+
     // 3. Log decision
     this.enhancedLogger.logQueueDecision('interrupted', 'human', 'User barged in', {
       interruptedSpeaker,
@@ -1411,22 +1424,57 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     if (aiPlayers.length === 0) return; // No AIs left?
 
     // PRIORITY 1: If someone was directly asked a question, they MUST respond
-    if (this.waitingForResponseFrom && !this.eliminatedPlayers.has(this.waitingForResponseFrom) && this.waitingForResponseFrom !== 'player1') {
+    if (this.waitingForResponseFrom && !this.eliminatedPlayers.has(this.waitingForResponseFrom)) {
       const timeSinceQuestion = Date.now() - this.questionAskedAt;
-      if (timeSinceQuestion < 7000) { // 7 second deadline
+
+      // CASE A: Question directed at HUMAN (player1)
+      if (this.waitingForResponseFrom === 'player1') {
+        if (timeSinceQuestion < 7000) {
+          gameLogger.turn(`⏳ Waiting for human response (${(timeSinceQuestion / 1000).toFixed(1)}s / 7s)`);
+
+          // Schedule deadline check if not already scheduled
+          if (!this.humanResponseDeadlineTimer) {
+            const remainingTime = 7000 - timeSinceQuestion;
+            this.humanResponseDeadlineTimer = setTimeout(() => {
+              this.humanResponseDeadlineTimer = null;
+              // Re-check if human still hasn't responded
+              if (this.waitingForResponseFrom === 'player1') {
+                gameLogger.turn(`⏰ Human response deadline expired (7s)`);
+                const askedBy = this.lastSpeakerId;
+                const humanName = this.players.player1?.name || 'Player';
+                this.waitingForResponseFrom = null;
+
+                // AI who asked comments on the silence
+                if (askedBy && !this.eliminatedPlayers.has(askedBy) && this.onTriggerAiResponse) {
+                  this.onTriggerAiResponse(askedBy, {
+                    speakerName: 'System',
+                    transcript: `[SYSTEM]: ${humanName} didn't respond to your question within 7 seconds. Comment on their silence as VERY suspicious and ask another question. Keep under 30 words.`,
+                    forceResponseToSilence: true
+                  });
+                }
+              }
+            }, remainingTime);
+          }
+          return; // DON'T pick another speaker - wait for human
+        }
+        // Past 7s already - clear and let normal flow continue
+        this.waitingForResponseFrom = null;
+        return;
+      }
+
+      // CASE B: Question directed at AI (existing logic)
+      if (timeSinceQuestion < 7000) {
         gameLogger.turn(`Forcing response from ${this.waitingForResponseFrom} (${(timeSinceQuestion / 1000).toFixed(1)}s since question)`);
         this.triggerForcedResponse(this.waitingForResponseFrom);
         return;
       } else {
         // DEADLINE EXPIRED - AI who asked comments on silence
         gameLogger.turn(`⏰ Response deadline expired for ${this.waitingForResponseFrom} (${(timeSinceQuestion / 1000).toFixed(1)}s)`);
-
-        const askedBy = this.lastSpeakerId; // The AI who asked the question
+        const askedBy = this.lastSpeakerId;
         const targetName = this.players[this.waitingForResponseFrom]?.name || this.waitingForResponseFrom;
 
         if (askedBy && !this.eliminatedPlayers.has(askedBy) && askedBy !== 'player1') {
           gameLogger.turn(`Forcing ${askedBy} to comment on ${targetName}'s silence`);
-
           if (this.onTriggerAiResponse) {
             this.onTriggerAiResponse(askedBy, {
               speakerName: 'System',
@@ -1436,7 +1484,6 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
             });
           }
         }
-
         this.waitingForResponseFrom = null;
         return;
       }
@@ -1541,7 +1588,16 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
   handleUserSpeakingStart() {
     gameLogger.turn('User started speaking (speech detected)');
     this.userCurrentlySpeaking = true;
-    // Could be used for real-time UI updates or analytics
+
+    // Clear human response deadline timer if active
+    if (this.humanResponseDeadlineTimer) {
+      clearTimeout(this.humanResponseDeadlineTimer);
+      this.humanResponseDeadlineTimer = null;
+      gameLogger.turn('Human started speaking - cleared response deadline timer');
+    }
+    if (this.waitingForResponseFrom === 'player1') {
+      this.waitingForResponseFrom = null;
+    }
   }
 
   handleUserSpeakingEnd() {

@@ -271,7 +271,7 @@ wss.on('connection', (ws, req) => {
     payload: moderatorController.getGameState()
   }));
 
-  ws.on('message', (message) => {
+  ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message);
       console.log('📨 [Server] Received:', data);
@@ -298,6 +298,11 @@ wss.on('connection', (ws, req) => {
           const playerName = data.payload?.playerName?.trim() || 'Player 1';
           moderatorController.setPlayerName(playerName);
           console.log(`👤 [Server] Player name: ${playerName}`);
+
+          // RE-INITIALIZE AI sessions with correct player name
+          // (They were initialized at startup with null/undefined name)
+          console.log('🔄 [Server] Re-initializing AI sessions with player name...');
+          await initializeAIPlayers();
 
           // Start the join sequence
           moderatorController.startGame();
