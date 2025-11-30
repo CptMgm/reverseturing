@@ -353,5 +353,3 @@ const voiceMap = {
 - **Backend**: Node.js + Express + WebSocket
 
 ---
-
-**Enjoy the game!** 🎭🤖🎮
