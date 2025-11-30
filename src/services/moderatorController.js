@@ -1107,10 +1107,10 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       this.addToConversationHistory('moderator', questionText);
       this.queueAudioPlayback('moderator', null, questionText);
 
-      // President leaves 2s after asking question
+      // President stays in the room (visible) but silent during Round 3
       setTimeout(() => {
-        this.disconnectPlayer('moderator');
-        gameLogger.moderator('President disconnected, debate continues');
+        // NOTE: President stays connected - don't disconnect!
+        gameLogger.moderator('President remains in the room, observing silently');
 
         // Notify AIs that debate continues
         const activeAIs = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
@@ -1137,8 +1137,8 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       timestamp: Date.now()
     };
 
-    // PREVENT audio during voting/verdict phases
-    const votingPhases = ['ELIMINATION_1', 'ELIMINATION_2', 'PRESIDENT_VERDICT', 'GAME_OVER'];
+    // PREVENT audio during voting phases (but ALLOW during PRESIDENT_VERDICT for the verdict speech)
+    const votingPhases = ['ELIMINATION_1', 'ELIMINATION_2', 'GAME_OVER'];
     if (votingPhases.includes(this.currentPhase)) {
       gameLogger.audio(playerId, `Rejecting audio during ${this.currentPhase} phase: "${transcript}"`);
       return; // Don't queue audio during voting
@@ -1376,8 +1376,31 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     // VERDICT COMPLETION: If President just finished speaking during verdict phase, transition to GAME_OVER
     if (this.currentPhase === GAME_PHASES.PRESIDENT_VERDICT && previousSpeaker === 'moderator') {
       gameLogger.system('Verdict delivered, transitioning to GAME_OVER');
+
+      // Parse verdict to determine win/lose
+      const verdictText = this.conversationHistory[this.conversationHistory.length - 1]?.text || '';
+      const humanName = this.players.player1.name;
+
+      // Check if verdict says human is a BOT (lose) or HUMAN (win)
+      let result = 'lose'; // Default to lose
+      if (verdictText.includes(`${humanName} is HUMAN`)) {
+        result = 'win';
+        gameLogger.system(`✅ HUMAN WON! President identified ${humanName} as HUMAN`);
+      } else if (verdictText.includes(`${humanName} is a BOT`)) {
+        result = 'lose';
+        gameLogger.system(`❌ HUMAN LOST! President identified ${humanName} as a BOT`);
+      } else {
+        // Fallback: If verdict format is unclear, try to guess
+        gameLogger.warn('Could not parse verdict clearly, defaulting to LOSE');
+      }
+
       setTimeout(() => {
         this.setPhase('GAME_OVER');
+
+        // Notify game over with result
+        if (this.onGameOver) {
+          this.onGameOver(result);
+        }
       }, 2000); // 2s delay for dramatic effect
       return; // Don't process queue or trigger next speaker
     }
@@ -1660,27 +1683,35 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       this.pendingAiTurnTimer = null;
     }
 
-    // Construct transcript for analysis
-    const transcriptText = this.fullTranscript.map(t => `${t.speaker}: ${t.text}`).join('\n');
+    // Construct transcript for analysis - ONLY Round 3 messages to avoid MAX_TOKENS
+    // Find where Round 3 started (look for President's "This is your final round" announcement)
+    const round3StartIndex = this.fullTranscript.findIndex(t =>
+      t.playerId === 'moderator' && t.text && t.text.includes('This is your final round')
+    );
+
+    // If we found Round 3 start, use messages from there; otherwise use last 15 messages
+    const round3Transcript = round3StartIndex >= 0
+      ? this.fullTranscript.slice(round3StartIndex) // Include President's announcement
+      : this.fullTranscript.slice(-15); // Fallback: last 15 messages
+
+    const transcriptText = round3Transcript.map(t => `${t.speaker}: ${t.text}`).join('\n');
 
     const remainingPlayers = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
     const remainingAI = remainingPlayers[0];
     const humanName = this.players.player1.name;
     const aiName = this.players[remainingAI].name;
 
-    const prompt = `[SYSTEM]: You are President Dorkesh Cartel. You have observed a debate between ${humanName} and ${aiName}. ONE of them is human. ONE of them is an AI pretending to be human.
+    const prompt = `You are President Dorkesh Cartel delivering the final verdict.
 
-Full Transcript:
+Round 3 Debate:
 ${transcriptText}
 
-Your Task:
-Analyze the debate, their responses, emotional depth, inconsistencies, and humanity. Then deliver your verdict.
+CRITICAL INSTRUCTION: You MUST output your verdict in EXACTLY this format (keep it under 100 words total):
 
-Output format (REQUIRED):
-VERDICT: [${humanName}/${aiName}] is HUMAN. [${humanName}/${aiName}] is a BOT.
-REASONING: [Your dramatic 2-3 sentence explanation citing specific evidence from the debate]
+VERDICT: [Choose ${humanName} OR ${aiName}] is HUMAN. [Choose the other] is a BOT.
+REASONING: [2-3 sentences max citing specific evidence]
 
-Be authoritative, final, and cite specific moments from the transcript.`;
+Start with "VERDICT:" immediately. Be concise and authoritative.`;
 
     try {
       if (this.geminiService) {

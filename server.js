@@ -447,6 +447,24 @@ wss.on('connection', (ws, req) => {
           }
           break;
 
+        case 'SKIP_TO_ROUND_3':
+          // 🧪 TESTING ONLY: Skip directly to Round 3
+          console.log('🧪 [TEST] Skipping to Round 3...');
+
+          // Eliminate player2 and player3 (leave player1 and player4)
+          moderatorController.eliminatePlayer('player2');
+          moderatorController.eliminatePlayer('player3');
+
+          // Clear votes
+          moderatorController.votes = {};
+
+          // Start Round 3 directly
+          moderatorController.startRound3('player3'); // Pretend player3 was just eliminated
+
+          broadcastGameState();
+          console.log('✅ [TEST] Jumped to Round 3 - Human vs player4');
+          break;
+
         case 'RETURN_TO_LOBBY':
         case 'RESET_GAME':
           // Debounce: Ignore rapid multiple resets
@@ -523,6 +541,15 @@ moderatorController.onVoteUpdate = (votes) => {
 };
 
 moderatorController.onConsensusReached = (consensus) => {
+  broadcastGameState();
+};
+
+moderatorController.onGameOver = (result) => {
+  console.log(`🎮 [Server] Game Over - Result: ${result.toUpperCase()}`);
+  broadcast({
+    type: 'GAME_OVER',
+    payload: { result } // 'win' or 'lose'
+  });
   broadcastGameState();
 };
 

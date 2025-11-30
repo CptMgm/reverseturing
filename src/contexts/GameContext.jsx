@@ -512,6 +512,15 @@ export const GameProvider = ({ children }) => {
             // Auto-clear error after 10 seconds
             setTimeout(() => setSystemError(null), 10000);
             break;
+
+          case 'GAME_OVER':
+            console.log(`🎮 [GameContext] Game Over - Result: ${data.payload.result}`);
+            // Store the game result for the end screen
+            setGameState(prevState => ({
+              ...prevState,
+              gameResult: data.payload.result // 'win' or 'lose'
+            }));
+            break;
         }
       } catch (error) {
         console.error('❌ Error parsing message:', error);
@@ -824,6 +833,27 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  // 🧪 TESTING ONLY: Skip to Round 3
+  const skipToRound3 = () => {
+    if (wsRef.current && isConnected) {
+      console.log('🧪 [GameContext] Sending SKIP_TO_ROUND_3 command...');
+      wsRef.current.send(JSON.stringify({
+        type: 'SKIP_TO_ROUND_3'
+      }));
+    } else {
+      console.error('❌ Cannot skip - WebSocket not connected');
+    }
+  };
+
+  // 🧪 Expose testing function to browser console
+  useEffect(() => {
+    window.skipToRound3 = skipToRound3;
+    console.log('🧪 [TEST] Testing command available: window.skipToRound3()');
+    return () => {
+      delete window.skipToRound3;
+    };
+  }, [isConnected]);
+
   const selectCommunicationMode = async (mode) => {
     console.log(`🎤 [GameContext] Selecting communication mode: ${mode}`);
     setCommunicationMode(mode);
@@ -881,6 +911,7 @@ export const GameProvider = ({ children }) => {
       sendHumanInput,
       callPresident,
       castVote,
+      skipToRound3, // 🧪 Testing function
       dailyUrl,
       systemError,
       communicationMode,
