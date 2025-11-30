@@ -1553,7 +1553,21 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
   handleUserSpeakingStop() {
     gameLogger.turn('User stopped speaking (timeout-based detection - 1.5s silence)');
     this.userCurrentlySpeaking = false;
+
     // Re-enable audio queueing after user finishes speaking
+    // If queue is empty and no one is speaking, trigger next AI turn
+    if (!this.activeSpeaker && this.audioQueue.length === 0) {
+      const roundPhases = ['ROUND_1', 'ROUND_2', 'ROUND_3'];
+      if (roundPhases.includes(this.currentPhase)) {
+        gameLogger.turn('Queue empty after user speech - triggering AI turn');
+        // Give a brief delay before AI responds (feels more natural)
+        setTimeout(() => {
+          if (!this.activeSpeaker && this.audioQueue.length === 0) {
+            this.triggerNextAiTurn();
+          }
+        }, 800);
+      }
+    }
   }
 
   onPresidentIntroStart() {

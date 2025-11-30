@@ -317,11 +317,20 @@ export const GameProvider = ({ children }) => {
 
     recognition.onend = () => {
       console.log('🎤 [GameContext] Voice recognition ended.');
-      // Auto-restart if mode is still voice (unless explicitly stopped or permission denied)
-      if (communicationMode === 'voice' && recognitionRef.current) {
-        console.log('🔄 [GameContext] Restarting recognition in 1s...');
+
+      // Only auto-restart if:
+      // 1. Mode is still voice
+      // 2. recognitionRef is still set (not explicitly stopped)
+      // 3. Current phase is a round phase (ROUND_1/2/3)
+      const roundPhases = ['ROUND_1', 'ROUND_2', 'ROUND_3'];
+      const shouldRestart = communicationMode === 'voice' &&
+                           recognitionRef.current &&
+                           roundPhases.includes(gameState.phase);
+
+      if (shouldRestart) {
+        console.log(`🔄 [GameContext] Restarting recognition in 1s (phase: ${gameState.phase})...`);
         setTimeout(() => {
-          if (communicationMode === 'voice' && recognitionRef.current) {
+          if (communicationMode === 'voice' && recognitionRef.current && roundPhases.includes(gameState.phase)) {
             try {
               recognition.start();
             } catch (e) {
@@ -329,6 +338,8 @@ export const GameProvider = ({ children }) => {
             }
           }
         }, 1000); // 1 second backoff to prevent tight loops
+      } else {
+        console.log(`⏸️ [GameContext] Not restarting recognition (mode: ${communicationMode}, phase: ${gameState.phase})`);
       }
     };
 
@@ -348,19 +359,32 @@ export const GameProvider = ({ children }) => {
       }
     };
 
-    try {
-      recognition.start();
-      recognitionRef.current = recognition;
-    } catch (e) {
-      console.error('❌ [GameContext] Failed to start recognition:', e);
+    // Save recognition object
+    recognitionRef.current = recognition;
+
+    // Check if we're already in a round phase - if so, start immediately
+    const roundPhases = ['ROUND_1', 'ROUND_2', 'ROUND_3'];
+    if (roundPhases.includes(gameState.phase)) {
+      try {
+        recognition.start();
+        console.log(`🎤 [GameContext] Voice Mode configured and started immediately (phase: ${gameState.phase})`);
+      } catch (e) {
+        console.error('❌ [GameContext] Failed to start recognition:', e);
+      }
+    } else {
+      console.log(`🎤 [GameContext] Voice Mode configured (will start when Round 1 begins, current phase: ${gameState.phase})`);
     }
   };
 
   const stopVoiceMode = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.log('⚠️ [GameContext] Error stopping recognition:', e);
+      }
       recognitionRef.current = null;
-      console.log('🎤 [GameContext] Stopped Voice Mode');
+      console.log('🎤 [GameContext] Stopped Voice Mode (recognition fully cleaned up)');
     }
   };
 
@@ -435,6 +459,33 @@ export const GameProvider = ({ children }) => {
             // Show mode selection when president intro starts (only once)
             if (data.payload.phase === 'PRESIDENT_INTRO' && !modeSelectedRef.current) {
               setShowModeSelection(true);
+            }
+
+            // Phase-based voice recognition control (only during rounds)
+            // Check if recognitionRef exists (more reliable than communicationMode state)
+            if (recognitionRef.current) {
+              const roundPhases = ['ROUND_1', 'ROUND_2', 'ROUND_3'];
+              const newPhase = data.payload.phase;
+
+              if (roundPhases.includes(newPhase)) {
+                // Start recognition when entering a round phase
+                try {
+                  recognitionRef.current.start();
+                  console.log(`🎤 [GameContext] Started voice recognition for ${newPhase}`);
+                } catch (e) {
+                  // Might already be running, that's okay
+                  console.log(`⚠️ [GameContext] Recognition already running for ${newPhase}`);
+                }
+              } else {
+                // Stop recognition during non-round phases
+                try {
+                  recognitionRef.current.stop();
+                  console.log(`⏸️ [GameContext] Stopped voice recognition for ${newPhase}`);
+                } catch (e) {
+                  // Might already be stopped, that's okay
+                  console.log(`⚠️ [GameContext] Recognition already stopped for ${newPhase}`);
+                }
+              }
             }
             break;
 
@@ -849,6 +900,7 @@ export const GameProvider = ({ children }) => {
       stopVoiceMode,
       resetGame: () => {
         stopAudio(); // Stop local audio immediately
+        stopVoiceMode(); // Stop and clean up voice recognition
 
         // Reset client-side state
         setCommunicationMode(null);
