@@ -512,6 +512,13 @@ export const GameProvider = ({ children }) => {
             // Auto-clear error after 10 seconds
             setTimeout(() => setSystemError(null), 10000);
             break;
+
+          case 'GAME_OVER':
+            setGameState(prevState => ({
+              ...prevState,
+              gameResult: data.payload.result
+            }));
+            break;
         }
       } catch (error) {
         console.error('❌ Error parsing message:', error);

@@ -1137,8 +1137,8 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       timestamp: Date.now()
     };
 
-    // PREVENT audio during voting/verdict phases
-    const votingPhases = ['ELIMINATION_1', 'ELIMINATION_2', 'PRESIDENT_VERDICT', 'GAME_OVER'];
+    // PREVENT audio during voting phases (but allow verdict audio to play)
+    const votingPhases = ['ELIMINATION_1', 'ELIMINATION_2', 'GAME_OVER'];
     if (votingPhases.includes(this.currentPhase)) {
       gameLogger.audio(playerId, `Rejecting audio during ${this.currentPhase} phase: "${transcript}"`);
       return; // Don't queue audio during voting
@@ -1376,8 +1376,19 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
     // VERDICT COMPLETION: If President just finished speaking during verdict phase, transition to GAME_OVER
     if (this.currentPhase === GAME_PHASES.PRESIDENT_VERDICT && previousSpeaker === 'moderator') {
       gameLogger.system('Verdict delivered, transitioning to GAME_OVER');
+
+      // Parse verdict to determine win/lose
+      const verdictText = this.conversationHistory[this.conversationHistory.length - 1]?.text || '';
+      const humanName = this.players.player1.name;
+      const result = verdictText.includes(`${humanName} is HUMAN`) ? 'win' : 'lose';
+
+      gameLogger.system(`Game result: ${result.toUpperCase()}`);
+
       setTimeout(() => {
         this.setPhase('GAME_OVER');
+        if (this.onGameOver) {
+          this.onGameOver(result);
+        }
       }, 2000); // 2s delay for dramatic effect
       return; // Don't process queue or trigger next speaker
     }
@@ -1660,27 +1671,25 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
       this.pendingAiTurnTimer = null;
     }
 
-    // Construct transcript for analysis
-    const transcriptText = this.fullTranscript.map(t => `${t.speaker}: ${t.text}`).join('\n');
+    // Construct transcript for analysis - use only last 15 messages to avoid MAX_TOKENS
+    const recentTranscript = this.fullTranscript.slice(-15);
+    const transcriptText = recentTranscript.map(t => `${t.speaker}: ${t.text}`).join('\n');
 
     const remainingPlayers = ['player2', 'player3', 'player4'].filter(id => !this.eliminatedPlayers.has(id));
     const remainingAI = remainingPlayers[0];
     const humanName = this.players.player1.name;
     const aiName = this.players[remainingAI].name;
 
-    const prompt = `[SYSTEM]: You are President Dorkesh Cartel. You have observed a debate between ${humanName} and ${aiName}. ONE of them is human. ONE of them is an AI pretending to be human.
+    const prompt = `You are President Dorkesh Cartel delivering final verdict.
 
-Full Transcript:
+Recent Debate:
 ${transcriptText}
 
-Your Task:
-Analyze the debate, their responses, emotional depth, inconsistencies, and humanity. Then deliver your verdict.
+Output in this EXACT format (under 80 words):
+VERDICT: [${humanName} OR ${aiName}] is HUMAN. [other] is a BOT.
+REASONING: [2 sentences citing specific evidence]
 
-Output format (REQUIRED):
-VERDICT: [${humanName}/${aiName}] is HUMAN. [${humanName}/${aiName}] is a BOT.
-REASONING: [Your dramatic 2-3 sentence explanation citing specific evidence from the debate]
-
-Be authoritative, final, and cite specific moments from the transcript.`;
+Be concise and decisive.`;
 
     try {
       if (this.geminiService) {

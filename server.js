@@ -526,6 +526,14 @@ moderatorController.onConsensusReached = (consensus) => {
   broadcastGameState();
 };
 
+moderatorController.onGameOver = (result) => {
+  broadcast({
+    type: 'GAME_OVER',
+    payload: { result }
+  });
+  broadcastGameState();
+};
+
 moderatorController.onSecretModeratorSelected = async (playerId) => {
   // Update the AI's session with Secret Moderator instructions
   const humanName = moderatorController.players.player1.name;

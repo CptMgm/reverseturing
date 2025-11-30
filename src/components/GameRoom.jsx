@@ -121,6 +121,11 @@ const GameRoom = () => {
                 setEndScreenResult('lose');
                 setShowEndScreen(true);
             }, 2000); // 2 second delay to show elimination animation/message
+        } else if (gameState.gameResult) {
+            setTimeout(() => {
+                setEndScreenResult(gameState.gameResult);
+                setShowEndScreen(true);
+            }, 2000);
         } else if (gameState.phase === 'LOBBY') {
             // Reset end screen when returning to lobby
             setShowEndScreen(false);
@@ -147,7 +152,7 @@ const GameRoom = () => {
             }
             prevPhaseRef.current = gameState.phase;
         }
-    }, [gameState.eliminatedPlayers, gameState.phase]);
+    }, [gameState.eliminatedPlayers, gameState.phase, gameState.gameResult]);
 
     useEffect(() => {
         if (dailyUrl && !callFrameRef.current) {
