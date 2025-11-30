@@ -5,6 +5,7 @@ import './index.css';
 
 function App() {
   return (
+    // Minor no-op comment to trigger redeploy
     <GameProvider>
       <GameRoom />
     </GameProvider>
