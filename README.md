@@ -2,15 +2,15 @@
 
 A multiplayer social deduction game where 1 human must convince 3 AI characters that they are human, while the AIs try to prove they themselves are human.
 
-## 🎮 Game Concept
+##  Game Concept
 
 You're in a voice/text call with 3 AI characters. A mysterious "President" announces that reality is a simulation that's collapsing. Only one real human can escape - but the AIs believe they're human too. Through debate and voting, the group must identify the real human.
 
 **The twist**: You ARE the human, but the AIs don't know that. Can you convince them you're real while they try to prove they're not bots?
 
-## 🚀 Quick Start (Local Development)
+##  Quick Start (Local Development)
 
-**⚠️ Currently Local-Only**: This game runs locally only. Production deployment to GCloud Run + Lovable frontend is in progress (see Deployment section below).
+** Currently Local-Only**: This game runs locally only. Production deployment to GCloud Run + Lovable frontend is in progress (see Deployment section below).
 
 ```bash
 # Install dependencies
@@ -31,7 +31,7 @@ npm run dev
 
 Visit `http://localhost:5173` to play!
 
-## 🎯 Features
+##  Features
 
 ### Core Gameplay
 - **Voice or Text Mode**: Choose your communication method
@@ -67,7 +67,7 @@ Visit `http://localhost:5173` to play!
 - **WebSocket Communication**: Real-time bidirectional updates
 - **Web Audio API**: Phone effect applied to all AI voices
 
-## 📋 Architecture
+##  Architecture
 
 ### Tech Stack
 - **Frontend**: React + Vite + Tailwind CSS
@@ -115,7 +115,7 @@ The game follows a 3-round structure with eliminations between rounds:
 
 **Secret Moderator**: The first AI to speak in Round 1 becomes the hidden conversation leader. They speak 0.5s after the round overlay (not 7s like others) due to overlay holdback.
 
-## ⏱️ Timing & Architecture
+##  Timing & Architecture
 
 ### Client-Side Timers
 All timers (round countdown, elimination countdown) run **client-side** using absolute timestamps to prevent network lag and jitter:
@@ -171,13 +171,13 @@ Logging system captures:
 
 See `IDEAL_SERVER_LOG_V2.md` for the blueprint of expected timing.
 
-## 🚚 Deployment
+##  Deployment
 
 ### Current Status: Ready for Production Deployment
 
 The game is now ready to be deployed to production with GCloud Run backend and Lovable frontend. All authentication and configuration is in place.
 
-**📖 See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete step-by-step instructions.**
+** See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete step-by-step instructions.**
 
 ### Quick Start Deployment
 
@@ -348,113 +348,8 @@ const voiceMap = {
 };
 ```
 
-## 💰 Cost Estimates
 
-### Per Game (~10 minutes)
-- **Gemini API**: ~25 calls (FREE)
-- **ElevenLabs TTS**: ~25 calls × 250 credits = **~6,250 credits**
-
-### With ElevenLabs Creator Plan ($11/month)
-- **330,000 credits/month** = ~53 games/month
-
-### Optimization Tips
-- Already using `eleven_monolingual_v1` (35% cheaper than turbo)
-- Message dismissal reduces API calls by ~17%
-- Shorten AI responses to reduce character count
-
-## 🎨 UI Features
-
-### Google Meet Style Layout
-- **Video Grid**: Left side, shows all participants
-- **Chat Sidebar**: Right side, collapsible (320px → 48px)
-- **Voting Panel**: Appears only during voting phase
-- **Mode Selection**: Beautiful modal for voice/text choice
-
-### Visual Indicators
-- **Active Speaker**: Highlighted border around speaking player
-- **Connection Status**: Shows which players are connected
-- **System Errors**: Animated error messages
-- **Phase Display**: Current game phase in header
-
-## 📚 Documentation
-
-- **`CURRENT_IMPLEMENTATION_EXPLAINED.md`** - Complete technical deep-dive
-  - API architecture explanation
-  - Message queuing system
-  - Voice input status (not yet connected)
-  - Context management details
-
-- **`FINAL_IMPLEMENTATION_SUMMARY.md`** - Latest improvements
-  - Message dismissal implementation
-  - Text mode AI suspicion
-  - User turn forcing
-  - Comprehensive logging
-
-## 🐛 Known Issues / TODOs
-
-### High Priority
-- [ ] **Voice Input Not Connected** - Components exist but unused
-- [ ] **Display Conversation History** - Show messages in chat sidebar
-- [ ] **Turn Indicator Visual** - Green border when it's your turn
-
-### Medium Priority
-- [ ] **Complete Gemini Logging** - Add error logging
-- [ ] **Dynamic Timeout** - Adjust based on question complexity
-- [ ] **Credit Monitor** - Show remaining ElevenLabs credits in UI
-
-### Low Priority
-- [ ] **Remove Daily.co** - Unused video infrastructure (can simplify)
-- [ ] **Replay System** - Load conversation-log.txt to watch replays
-- [ ] **Analytics Dashboard** - Visualize api-logs.jsonl data
-
-## 🧪 Testing
-
-### Manual Test Checklist
-- [ ] Start game with custom name
-- [ ] Select text mode → AI comments suspiciously
-- [ ] Get asked a question → Stay silent → AI comments
-- [ ] Type while waiting → Deadline extends
-- [ ] Multiple AIs respond → Only first plays (check console)
-- [ ] Check `api-logs.jsonl` after game
-- [ ] Check `conversation-log.txt` after game
-
-### Console Logs to Watch For
-
-**Message Dismissal**:
-```
-❌ [ModeratorController] Dismissing simultaneous response from player3
-   Time since last response: 1432ms (< 2000ms)
-```
-
-**Text Mode Detection**:
-```
-🎙️ [Server] User selected communication mode: text
-📝 [ModeratorController] Text mode detected, triggering AI suspicion
-```
-
-**User Turn Forcing**:
-```
-⏰ [ModeratorController] Waiting for user response (10s timeout)
-⌨️ [ModeratorController] User is typing... extending deadline
-⚠️ [ModeratorController] User didn't respond in 10 seconds
-```
-
-## 🤝 Contributing
-
-This is a personal project, but feel free to fork and experiment!
-
-## 📝 License
-
-MIT License - See LICENSE file for details
-
-## 🎮 Credits
-
-- **Concept**: Reverse Turing Test social deduction game
-- **AI**: Google Gemini (gemini-2.0-flash)
-- **Voice**: ElevenLabs (eleven_monolingual_v1)
-- **Frontend**: React + Vite + Tailwind CSS
+\
 - **Backend**: Node.js + Express + WebSocket
 
 ---
-
-**Enjoy the game!** 🎭🤖🎮
