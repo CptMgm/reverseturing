@@ -11,6 +11,10 @@ conversation-log.txt
 server-debug.log
 cache/
 
+# Test results (may contain API keys)
+tests/*-results.txt
+tests/*-output.txt
+
 node_modules
 dist
 dist-ssr

@@ -24,7 +24,7 @@ export const PasswordModal = ({ onAuthenticate, error }) => {
       // Determine API endpoint based on environment
       const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
       const apiUrl = import.meta.env.VITE_BACKEND_URL ||
-        (isProduction ? 'https://reverse-turing-backend-271123520248.us-central1.run.app' : 'http://localhost:3001');
+        (isProduction ? 'https://YOUR_BACKEND_URL.run.app' : 'http://localhost:3001');
 
       const response = await fetch(`${apiUrl}/api/auth/login`, {
         method: 'POST',

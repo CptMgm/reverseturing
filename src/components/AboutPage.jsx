@@ -114,7 +114,7 @@ const AboutPage = ({ onBack }) => {
                                 </summary>
                                 <div className="mt-4 space-y-3 text-slate-300">
                                     <p>The game has three rounds:</p>
-                                    <p><strong className="text-amber-100">Round 1 - Questions:</strong> The Moderator (Dwarkesh Patel) asks each player a question about being human. You and three AI characters take turns answering.</p>
+                                    <p><strong className="text-amber-100">Round 1 - Questions:</strong> The Moderator (Dorkesh Cartel) asks each player a question about being human. You and three AI characters take turns answering.</p>
                                     <p><strong className="text-amber-100">Round 2 - Discussion:</strong> Free-form debate. Anyone can speak. AIs will ask you questions and respond to each other.</p>
                                     <p><strong className="text-amber-100">Round 3 - Voting:</strong> Everyone votes on who they think is the real human. Most votes wins.</p>
                                     <p className="italic">Each AI character is powered by a separate instance of Gemini 2.0 Flash with distinct personalities and instructions. They don't know you're the human—they genuinely believe they might be.</p>
@@ -136,7 +136,7 @@ const AboutPage = ({ onBack }) => {
                                     </ul>
                                     <p className="mt-4">Technical approach:</p>
                                     <ul className="list-disc list-inside space-y-1 ml-4">
-                                        <li>Message queue system prevents simultaneous AI responses</li>
+                                        <li>Audio queue system prevents simultaneous AI responses</li>
                                         <li>Each AI maintains conversation context through a rolling message window</li>
                                         <li>Turn management detects when you're being asked a question directly</li>
                                         <li>All voices have telephone audio processing for consistent quality</li>
@@ -154,11 +154,10 @@ const AboutPage = ({ onBack }) => {
                                     <div>
                                         <p className="font-semibold text-amber-100 mb-2">Essays & Resources:</p>
                                         <ul className="list-disc list-inside space-y-1 ml-4">
-                                            <li><strong>Keep The Future Human</strong> by Anthony Aguirre - the essay that inspired this game</li>
-                                            <li><strong>My post on AI harms</strong> - catalog of risks we're already seeing</li>
-                                            <li><strong>AI Safety Fundamentals</strong> - bluedot.org/course for beginners</li>
-                                            <li><strong>The Alignment Problem</strong> by Brian Christian - accessible intro book</li>
-                                        </ul>
+                                            <li><a href="https://keepthefuturehuman.ai" target="_blank" rel="noopener noreferrer" className="text-amber-200 hover:text-amber-100 underline"><strong>Keep The Future Human</strong></a> by Anthony Aguirre - the essay that inspired this game</li>
+                                            <li><a href="https://aisfounders.com/harms" target="_blank" rel="noopener noreferrer" className="text-amber-200 hover:text-amber-100 underline"><strong>My post on AI harms</strong></a> - catalog of risks we're already seeing</li>
+                                            <li><a href="https://apartresearch.com" target="_blank" rel="noopener noreferrer" className="text-amber-200 hover:text-amber-100 underline"><strong>Apart Research</strong></a> - hackathons and fellowships for AI safety research</li>
+                                         </ul>
                                     </div>
                                 </div>
                             </details>
@@ -172,8 +171,7 @@ const AboutPage = ({ onBack }) => {
                         <h2 className="text-3xl font-bold text-amber-200 mb-6">Contact</h2>
                         <div className="space-y-2 text-slate-300">
                             <p>Questions, feedback, or want to discuss AI safety?</p>
-                            <p><strong className="text-amber-100">Email:</strong> <a href="mailto:contact@beepbooptest.com" className="text-amber-200 hover:text-amber-100 underline">contact@beepbooptest.com</a></p>
-                            <p><strong className="text-amber-100">LinkedIn:</strong> <a href="https://linkedin.com/in/finn-metz" className="text-amber-200 hover:text-amber-100 underline">Finn Metz</a></p>
+                            <p><strong className="text-amber-100">LinkedIn:</strong> <a href="https://linkedin.com/in/finn-metz" target="_blank" rel="noopener noreferrer" className="text-amber-200 hover:text-amber-100 underline">Finn Metz</a></p>
                         </div>
                     </section>
                 </div>

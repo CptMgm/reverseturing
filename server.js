@@ -137,37 +137,6 @@ async function getCachedPresidentIntro() {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ====== PASSWORD AUTHENTICATION ======
-const GAME_PASSWORD = process.env.GAME_PASSWORD || 'keepthefuturehuman';
-const activeSessions = new Set(); // Store active session tokens
-
-/**
- * Generate a simple session token
- */
-function generateSessionToken() {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
-}
-
-/**
- * Verify password and create session
- */
-function authenticatePassword(password) {
-  if (password === GAME_PASSWORD) {
-    const token = generateSessionToken();
-    activeSessions.add(token);
-    gameLogger.system(`New session authenticated: ${token.substring(0, 8)}...`);
-    return token;
-  }
-  return null;
-}
-
-/**
- * Validate session token
- */
-function validateSessionToken(token) {
-  return activeSessions.has(token);
-}
-
 // CORS configuration for production
 const corsOptions = {
   origin: process.env.FRONTEND_URL || '*', // Set FRONTEND_URL env var to your Lovable domain
@@ -248,22 +217,8 @@ initializeAIPlayers();
 
 // Handle WebSocket connections from frontend
 wss.on('connection', (ws, req) => {
-  // Extract token from URL query parameters
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const token = url.searchParams.get('token');
-
-  // Validate token (skip in development if no GAME_PASSWORD is set)
-  const isDevelopment = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
-  const requiresAuth = process.env.GAME_PASSWORD || !isDevelopment;
-
-  if (requiresAuth && !validateSessionToken(token)) {
-    gameLogger.warn('Unauthorized WebSocket connection attempt');
-    ws.close(4401, 'Unauthorized: Invalid or missing token');
-    return;
-  }
-
-  console.log('🔌 [Server] New client connected (authenticated)');
-  gameLogger.system(`Client connected with token: ${token?.substring(0, 8)}...`);
+  console.log('🔌 [Server] New client connected');
+  gameLogger.system('Client connected');
 
   // Send initial game state
   ws.send(JSON.stringify({
@@ -1014,47 +969,6 @@ async function createDailyRoom() {
     return null;
   }
 }
-
-// ====== AUTHENTICATION ENDPOINTS ======
-
-/**
- * Password authentication endpoint
- * POST /api/auth/login
- * Body: { password: string }
- * Returns: { success: boolean, token?: string, error?: string }
- */
-app.post('/api/auth/login', (req, res) => {
-  const { password } = req.body;
-
-  if (!password) {
-    return res.status(400).json({ success: false, error: 'Password required' });
-  }
-
-  const token = authenticatePassword(password);
-
-  if (token) {
-    gameLogger.system('Successful authentication attempt');
-    return res.json({ success: true, token });
-  } else {
-    gameLogger.warn('Failed authentication attempt');
-    return res.status(401).json({ success: false, error: 'Invalid password' });
-  }
-});
-
-/**
- * Check if token is valid
- * GET /api/auth/check?token=xxx
- */
-app.get('/api/auth/check', (req, res) => {
-  const token = req.query.token;
-
-  if (!token) {
-    return res.status(400).json({ valid: false, error: 'Token required' });
-  }
-
-  const isValid = validateSessionToken(token);
-  return res.json({ valid: isValid });
-});
 
 // Daily.co room creation endpoint
 app.post('/api/daily/create-room', async (req, res) => {

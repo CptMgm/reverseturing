@@ -78,6 +78,7 @@ const GameRoom = () => {
     const [roundOverlay, setRoundOverlay] = useState(null); // { title: 'ROUND 1', subtitle: 'Identify the Human' }
     const [userAvatar, setUserAvatar] = useState(null);
     const [showAbout, setShowAbout] = useState(false);
+    const [timeRemaining, setTimeRemaining] = useState(0);
     const dailyRef = useRef(null);
     const callFrameRef = useRef(null);
     const typingTimeoutRef = useRef(null);
@@ -97,6 +98,20 @@ const GameRoom = () => {
             setIsChatOpen(false);
         }
     }, [communicationMode]);
+
+    // Timer update interval - triggers re-renders every 100ms for smooth countdown
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (gameState.roundEndTime) {
+                const remaining = Math.max(0, Math.ceil((gameState.roundEndTime - Date.now()) / 1000));
+                setTimeRemaining(remaining);
+            } else {
+                setTimeRemaining(0);
+            }
+        }, 100); // Update 10 times per second for smooth countdown
+
+        return () => clearInterval(interval);
+    }, [gameState.roundEndTime]);
 
     // Check if player gets eliminated
     useEffect(() => {
@@ -428,18 +443,9 @@ const GameRoom = () => {
                     {/* Timer Display - Show during round phases */}
                     {gameState.phase.startsWith('ROUND') && (
                         <div className="bg-slate-800/90 px-6 py-3 rounded-lg border border-slate-600 flex items-center gap-3 backdrop-blur-sm shadow-xl pointer-events-auto">
-                            <div className={`w-2 h-2 rounded-full ${gameState.roundEndTime && (gameState.roundEndTime - Date.now()) < 10000
-                                ? 'bg-red-400'
-                                : 'bg-amber-200'
-                                }`} />
+                            <div className={`w-2 h-2 rounded-full ${timeRemaining < 10 ? 'bg-red-400' : 'bg-amber-200'}`} />
                             <span className="font-mono text-2xl font-bold tracking-wider text-amber-100">
-                                {(() => {
-                                    if (!gameState.roundEndTime) return '0:00';
-                                    const remaining = Math.max(0, Math.ceil((gameState.roundEndTime - Date.now()) / 1000));
-                                    const mins = Math.floor(remaining / 60);
-                                    const secs = remaining % 60;
-                                    return `${mins}:${secs.toString().padStart(2, '0')}`;
-                                })()}
+                                {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, '0')}
                             </span>
                         </div>
                     )}
