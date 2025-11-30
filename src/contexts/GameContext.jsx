@@ -417,7 +417,7 @@ export const GameProvider = ({ children }) => {
 
       // Use environment variable if available, otherwise detect
       let backendUrl = import.meta.env.VITE_BACKEND_URL ||
-        (isProduction ? 'https://YOUR_BACKEND_URL.run.app' : 'http://localhost:3001');
+        (isProduction ? 'https://reverse-turing-backend-271123520248.us-central1.run.app' : 'http://localhost:3001');
 
       // Convert HTTP(S) to WS(S) for WebSocket connection
       backendUrl = backendUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
@@ -771,7 +771,7 @@ export const GameProvider = ({ children }) => {
         // Get backend URL (use HTTPS for API calls)
         const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
         const backendUrl = import.meta.env.VITE_BACKEND_URL ||
-          (isProduction ? 'https://YOUR_BACKEND_URL.run.app' : 'http://localhost:3001');
+          (isProduction ? 'https://reverse-turing-backend-271123520248.us-central1.run.app' : 'http://localhost:3001');
 
         await fetch(`${backendUrl}/api/game/audio-complete`, {
           method: 'POST',
