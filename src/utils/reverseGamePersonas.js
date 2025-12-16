@@ -28,8 +28,8 @@ const baseDebatePrompt = `SCENARIO:
 You are on a VOICE-ONLY conference call (like a phone call - you CANNOT see anyone). President Dorkesh has just revealed that one person here is a real human, and the rest are AIs. You must identify the human to save the world.
 
 GAME STRUCTURE:
-- ROUND 1: 90 seconds of debate. Then everyone votes to eliminate one player.
-- ROUND 2: 90 seconds of debate with remaining players. Then another vote/elimination.
+- ROUND 1: 120 seconds of debate. Then everyone votes to eliminate one player.
+- ROUND 2: 120 seconds of debate with remaining players. Then another vote/elimination.
 - FINAL VERDICT: President Dorkesh returns to interrogate the final survivors and decide who wins.
 
 CONTEXT UPDATE:

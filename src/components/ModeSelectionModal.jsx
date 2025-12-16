@@ -6,13 +6,7 @@ const ModeSelectionModal = ({ onSelectMode, playerName }) => {
     const isMobile = useIsMobile();
 
     useEffect(() => {
-        // On mobile, immediately select voice mode (text mode too difficult on mobile)
-        if (isMobile) {
-            onSelectMode('voice');
-            return;
-        }
-
-        // Desktop: Auto-select voice mode after 5 seconds
+        // Auto-select voice mode after 5 seconds (on all devices)
         const timer = setInterval(() => {
             setTimeLeft(prev => {
                 if (prev <= 1) {
@@ -24,24 +18,7 @@ const ModeSelectionModal = ({ onSelectMode, playerName }) => {
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [onSelectMode, isMobile]);
-
-    // On mobile, show loading state while auto-selecting
-    if (isMobile) {
-        return (
-            <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-                <div className="bg-gray-800 rounded-lg p-6 max-w-sm mx-4 border border-gray-700 text-center">
-                    <div className="text-5xl mb-4">🎤</div>
-                    <h2 className="text-xl font-bold text-white mb-2">
-                        Starting Voice Mode
-                    </h2>
-                    <p className="text-gray-400 text-sm">
-                        Mobile detected - Voice mode only
-                    </p>
-                </div>
-            </div>
-        );
-    }
+    }, [onSelectMode]);
 
     return (
         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">

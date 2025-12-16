@@ -448,10 +448,8 @@ export const GameProvider = ({ children }) => {
               ...data.payload
             }));
 
-            // Show mode selection when president intro starts (only once)
-            if (data.payload.phase === 'PRESIDENT_INTRO' && !modeSelectedRef.current) {
-              setShowModeSelection(true);
-            }
+            // Mode selection is now handled in GameRoom before game starts
+            // (removed automatic mode selection during PRESIDENT_INTRO)
 
             // Phase-based voice recognition control (only during rounds)
             // Check if recognitionRef exists (more reliable than communicationMode state)

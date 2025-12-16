@@ -30,7 +30,7 @@ export class ModeratorController {
 
     // Round & Timer state
     this.roundEndTime = null;
-    this.roundDuration = 90 * 1000; // 90 seconds
+    this.roundDuration = 120 * 1000; // 120 seconds
     this.timerInterval = null;
     this.eliminationRevealTime = null; // When elimination reveal countdown ends
 
@@ -372,9 +372,9 @@ export class ModeratorController {
     if (this.geminiService && activeAIs.length > 0) {
       if (newPhase === GAME_PHASES.ROUND_1) {
         // Inject visible round marker for AIs FIRST so it appears before any reactions
-        this.addToConversationHistory('system', '🔔 ROUND 1 HAS BEGUN. You have 90 seconds to debate and identify the human.');
+        this.addToConversationHistory('system', '🔔 ROUND 1 HAS BEGUN. You have 120 seconds to debate and identify the human.');
 
-        this.geminiService.sendSystemNotification(activeAIs, "Round 1 has begun. You have 90 seconds to debate and identify the human.");
+        this.geminiService.sendSystemNotification(activeAIs, "Round 1 has begun. You have 120 seconds to debate and identify the human.");
 
         // NOTE: Secret Moderator triggering is handled in onPresidentIntroComplete()
         // which pre-queues the AI DURING the overlay for immediate start
@@ -1117,7 +1117,7 @@ OUTPUT FORMAT: Output ONLY what your character says out loud. NO stage direction
         if (this.geminiService) {
           this.geminiService.sendSystemNotification(
             activeAIs,
-            `Round 3 - FINAL ROUND. The President just asked ${this.players.player1.name}: "${question}". Debate this question and prove your humanity. You have 90 seconds.`
+            `Round 3 - FINAL ROUND. The President just asked ${this.players.player1.name}: "${question}". Debate this question and prove your humanity. You have 120 seconds.`
           );
         }
       }, 2000); // 2s after question

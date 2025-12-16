@@ -105,11 +105,11 @@ The game follows a 3-round structure with eliminations between rounds:
 1. **LOBBY** - Waiting for player to start
 2. **CALL_CONNECTING** - Players joining call
 3. **PRESIDENT_INTRO** - President delivers opening speech (~12s)
-4. **ROUND_1** - First 90-second debate round (Secret Moderator speaks first)
+4. **ROUND_1** - First 120-second debate round (Secret Moderator speaks first)
 5. **ELIMINATION_1** - Vote and eliminate one player (10s countdown)
-6. **ROUND_2** - Second 90-second debate round
+6. **ROUND_2** - Second 120-second debate round
 7. **ELIMINATION_2** - Vote and eliminate another player (10s countdown)
-8. **ROUND_3** - Final 90-second round (President asks human a question)
+8. **ROUND_3** - Final 120-second round (President asks human a question)
 9. **PRESIDENT_VERDICT** - President returns with final judgment
 10. **GAME_OVER** - Game complete
 

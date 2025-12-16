@@ -79,11 +79,20 @@ const GameRoom = () => {
     const [userAvatar, setUserAvatar] = useState(null);
     const [showAbout, setShowAbout] = useState(false);
     const [timeRemaining, setTimeRemaining] = useState(0);
+    const [showPreGameModeSelection, setShowPreGameModeSelection] = useState(false);
+    const [pendingPlayerName, setPendingPlayerName] = useState('');
     const dailyRef = useRef(null);
     const callFrameRef = useRef(null);
     const typingTimeoutRef = useRef(null);
     const chatEndRef = useRef(null);
     const prevPhaseRef = useRef(gameState.phase);
+
+    // Handler for mode selection before game starts
+    const handlePreGameModeSelection = (mode) => {
+        selectCommunicationMode(mode);
+        setShowPreGameModeSelection(false);
+        startGame(pendingPlayerName);
+    };
 
     // Auto-scroll chat to bottom when new messages arrive
     useEffect(() => {
@@ -136,10 +145,10 @@ const GameRoom = () => {
         if (gameState.phase !== prevPhaseRef.current) {
             // Show Round 1 overlay when entering ROUND_1
             if (gameState.phase === 'ROUND_1') {
-                setRoundOverlay({ title: 'ROUND 1', subtitle: '4 Players Remain • 90 Seconds' });
+                setRoundOverlay({ title: 'ROUND 1', subtitle: '4 Players Remain • 120 Seconds' });
                 setTimeout(() => setRoundOverlay(null), 5000); // 5s overlay
             } else if (gameState.phase === 'ROUND_2') {
-                setRoundOverlay({ title: 'ROUND 2', subtitle: '3 Players Remain • 90 Seconds' });
+                setRoundOverlay({ title: 'ROUND 2', subtitle: '3 Players Remain • 120 Seconds' });
                 setTimeout(() => setRoundOverlay(null), 4000);
             } else if (gameState.phase === 'ROUND_3') {
                 setRoundOverlay({ title: 'FINAL ROUND', subtitle: 'The President Returns' });
@@ -301,6 +310,27 @@ const GameRoom = () => {
                         </div>
                     </div>
 
+                    {/* Video Tutorial Section */}
+                    <div className="mb-8 md:mb-10">
+                        <h3 className="text-center text-lg sm:text-xl text-amber-200 font-semibold mb-4">
+                            How to Play
+                        </h3>
+                        <div className="max-w-2xl mx-auto aspect-video bg-black/60 border-2 border-slate-700 rounded-xl overflow-hidden shadow-2xl">
+                            {/* YouTube embed - Replace VIDEO_ID with actual video ID */}
+                            <iframe
+                                className="w-full h-full"
+                                src="https://www.youtube.com/embed/YOUR_VIDEO_ID_HERE"
+                                title="Reverse Turing Test Tutorial"
+                                frameBorder="0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                            />
+                        </div>
+                        <p className="text-center text-xs sm:text-sm text-slate-500 mt-3 italic">
+                            Watch this quick tutorial to learn how the game works
+                        </p>
+                    </div>
+
                     {/* About Link */}
                     <div className="mb-8 flex justify-center">
                         <button
@@ -358,8 +388,9 @@ const GameRoom = () => {
                             value={inputText}
                             onChange={(e) => setInputText(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && inputText.trim()) {
-                                    startGame(inputText.trim());
+                                if (e.key === 'Enter' && inputText.trim() && userAvatar) {
+                                    setPendingPlayerName(inputText.trim());
+                                    setShowPreGameModeSelection(true);
                                     setInputText('');
                                 }
                             }}
@@ -370,8 +401,9 @@ const GameRoom = () => {
                     {/* CTA Button */}
                     <button
                         onClick={() => {
-                            if (inputText.trim()) {
-                                startGame(inputText.trim());
+                            if (inputText.trim() && userAvatar) {
+                                setPendingPlayerName(inputText.trim());
+                                setShowPreGameModeSelection(true);
                                 setInputText('');
                             }
                         }}
@@ -397,6 +429,14 @@ const GameRoom = () => {
                         background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.03) 0%, transparent 60%)'
                     }} />
                 </div>
+
+                {/* Pre-Game Mode Selection Modal */}
+                {showPreGameModeSelection && (
+                    <ModeSelectionModal
+                        onSelectMode={handlePreGameModeSelection}
+                        playerName={pendingPlayerName}
+                    />
+                )}
 
                 {/* Custom CSS for animations */}
                 <style>{`
@@ -437,9 +477,9 @@ const GameRoom = () => {
                 backgroundSize: '24px 24px'
             }} />
 
-            {/* Bottom Left: Round Indicator and Timer (Horizontal) */}
+            {/* Round Indicator and Timer - Top-left on mobile, bottom-left on desktop */}
             {(gameState.phase.startsWith('ROUND') || gameState.phase.startsWith('ELIMINATION')) && (
-                <div className="fixed bottom-6 left-6 z-50 flex items-center gap-4 pointer-events-none">
+                <div className="fixed top-6 left-6 md:top-auto md:bottom-6 z-50 flex items-center gap-4 pointer-events-none">
                     {/* Round Indicator */}
                     <div className="px-4 py-2 bg-slate-800/90 border border-slate-600 rounded-lg text-amber-100 font-mono text-sm font-semibold backdrop-blur-sm shadow-xl pointer-events-auto">
                         ROUND {gameState.phase.includes('1') ? '1' : gameState.phase.includes('2') ? '2' : '3'} / 3
@@ -447,9 +487,9 @@ const GameRoom = () => {
 
                     {/* Timer Display - Show during round phases */}
                     {gameState.phase.startsWith('ROUND') && (
-                        <div className="bg-slate-800/90 px-6 py-3 rounded-lg border border-slate-600 flex items-center gap-3 backdrop-blur-sm shadow-xl pointer-events-auto">
+                        <div className="bg-slate-800/90 px-4 md:px-6 py-2 md:py-3 rounded-lg border border-slate-600 flex items-center gap-2 md:gap-3 backdrop-blur-sm shadow-xl pointer-events-auto">
                             <div className={`w-2 h-2 rounded-full ${timeRemaining < 10 ? 'bg-red-400' : 'bg-amber-200'}`} />
-                            <span className="font-mono text-2xl font-bold tracking-wider text-amber-100">
+                            <span className="font-mono text-xl md:text-2xl font-bold tracking-wider text-amber-100">
                                 {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, '0')}
                             </span>
                         </div>
