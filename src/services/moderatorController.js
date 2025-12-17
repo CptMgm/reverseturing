@@ -224,31 +224,10 @@ export class ModeratorController {
       this.players.player1.communicationMode = mode;
     }
 
-    // Notify AIs of the mode
-    // CRITICAL: Do NOT notify AIs during President Intro, or they will interrupt the speech.
-    // The onPresidentIntroComplete() method handles the suspicion trigger after the intro finishes.
-    if (this.currentPhase === 'PRESIDENT_INTRO') {
-      gameLogger.system('Skipping AI notification during President Intro to prevent interruption');
-      return;
-    }
-
-    const aiPlayers = ['player2', 'player3', 'player4'];
-    let systemMsg = "";
-
-    if (mode === 'voice') {
-      systemMsg = `[SYSTEM UPDATE]: The human player (Player 1) has connected via VOICE. They are speaking into a microphone. You can HEAR them. Do NOT accuse them of typing or being silent if they are speaking. Treat their voice as their primary input.`;
-    } else {
-      systemMsg = `[SYSTEM UPDATE]: The human player (Player 1) has connected via TEXT-ONLY. They are NOT using a microphone. This is HIGHLY SUSPICIOUS. Why would a human not speak in a voice call? Accuse them of being a bot hiding behind text.`;
-    }
-
-    aiPlayers.forEach(playerId => {
-      if (!this.eliminatedPlayers.has(playerId)) {
-        // Use sendText to update the AI's context with the system message
-        this.geminiService.sendText(systemMsg, playerId).catch(err => {
-          gameLogger.error('AI mode update', `Failed to send mode update to ${playerId}`, err);
-        });
-      }
-    });
+    // Don't notify AIs here - they'll learn naturally:
+    // - Voice mode: They hear the human speak during the game
+    // - Text mode: Human sends "Sorry folks, my mic doesn't work" message in ROUND_1
+    // Sending notifications here causes AIs to respond before the game even starts
   }
 
   /**

@@ -22,6 +22,7 @@ export const GameProvider = ({ children }) => {
   const [isSpeaking, setIsSpeaking] = useState(false); // Track if user is currently speaking
   const [showModeSelection, setShowModeSelection] = useState(false);
   const modeSelectedRef = useRef(false); // Track if mode was already selected
+  const textModeMessageSentRef = useRef(false); // Track if text mode announcement was sent
   const wsRef = useRef(null);
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
@@ -578,6 +579,21 @@ export const GameProvider = ({ children }) => {
     previousPhaseRef.current = currentPhase;
   }, [gameState.phase]);
 
+  // Send text mode announcement when ROUND_1 starts
+  useEffect(() => {
+    if (gameState.phase === 'ROUND_1' &&
+        communicationMode === 'text' &&
+        !textModeMessageSentRef.current) {
+      // Send the announcement message now that we're in ROUND_1
+      console.log('📝 [GameContext] Sending text mode announcement in ROUND_1');
+      setTimeout(() => {
+        sendHumanInput("Sorry folks, my mic doesn't work. I'll use text chat.");
+        textModeMessageSentRef.current = true;
+      }, 2000); // 2 second delay after ROUND_1 starts
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState.phase, communicationMode]);
+
   // Audio Playback Queue
   const queueAudio = (payload) => {
     console.log('🔊 Queuing audio from:', payload.playerId);
@@ -859,13 +875,8 @@ export const GameProvider = ({ children }) => {
       startVoiceMode();
     }
 
-    // If text mode selected, announce it to the AIs
-    if (mode === 'text') {
-      // Send automatic message after a short delay
-      setTimeout(() => {
-        sendHumanInput("Sorry folks, my mic doesn't work. I'll use text chat.");
-      }, 1000);
-    }
+    // If text mode selected, we'll send the announcement when ROUND_1 starts
+    // (handled in useEffect below, not here - sending too early causes issues)
   };
 
   const sendTypingEvent = (isTyping) => {
@@ -903,6 +914,7 @@ export const GameProvider = ({ children }) => {
         setCommunicationMode(null);
         setShowModeSelection(false);
         modeSelectedRef.current = false; // Reset mode selection flag
+        textModeMessageSentRef.current = false; // Reset text mode message flag
         setIsSpeaking(false);
 
         // Send reset to server

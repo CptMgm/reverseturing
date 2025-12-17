@@ -42,7 +42,26 @@ export class GeminiLiveService {
       return;
     }
 
+    // CRITICAL: Block AI player responses during CALL_CONNECTING and PRESIDENT_INTRO
+    // But ALLOW the moderator (President) to speak during PRESIDENT_INTRO
+    if (this.moderatorController) {
+      const currentPhase = this.moderatorController.currentPhase;
+
+      // Block all players during CALL_CONNECTING
+      if (currentPhase === 'CALL_CONNECTING') {
+        console.log(`⏸️ [GeminiService] Blocking ${session.name} response during ${currentPhase} phase`);
+        return;
+      }
+
+      // Block AI players (player2, player3, player4) during PRESIDENT_INTRO, but allow moderator
+      if (currentPhase === 'PRESIDENT_INTRO' && targetPlayerId !== 'moderator') {
+        console.log(`⏸️ [GeminiService] Blocking ${session.name} response during ${currentPhase} phase`);
+        return;
+      }
+    }
+
     console.log(`out [GeminiService] Sending to ${session.name}: "${text.substring(0, 100)}..."`);
+
 
     // Build context-aware prompt
     let contextualPrompt = text;

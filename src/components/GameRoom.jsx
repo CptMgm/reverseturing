@@ -81,6 +81,7 @@ const GameRoom = () => {
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [showPreGameModeSelection, setShowPreGameModeSelection] = useState(false);
     const [pendingPlayerName, setPendingPlayerName] = useState('');
+    const [isConnectingToGame, setIsConnectingToGame] = useState(false);
     const dailyRef = useRef(null);
     const callFrameRef = useRef(null);
     const typingTimeoutRef = useRef(null);
@@ -91,6 +92,7 @@ const GameRoom = () => {
     const handlePreGameModeSelection = (mode) => {
         selectCommunicationMode(mode);
         setShowPreGameModeSelection(false);
+        setIsConnectingToGame(false); // Exit connecting screen
         startGame(pendingPlayerName);
     };
 
@@ -177,7 +179,13 @@ const GameRoom = () => {
                 showFullscreenButton: true,
             });
 
-            callFrame.join({ url: dailyUrl });
+            // Join without requesting camera/mic permissions
+            // We handle microphone separately through Web Speech API
+            callFrame.join({
+                url: dailyUrl,
+                audioSource: false,  // Don't request microphone
+                videoSource: false   // Don't request camera
+            });
             callFrameRef.current = callFrame;
         }
     }, [dailyUrl]);
@@ -230,10 +238,42 @@ const GameRoom = () => {
         return <AboutPage onBack={() => setShowAbout(false)} />;
     }
 
+    // Show connecting screen with mode selection modal
+    if (isConnectingToGame && gameState.phase === 'LOBBY') {
+        return (
+            <div className="flex items-center justify-center h-screen bg-slate-950 text-white">
+                {/* Game-like background */}
+                <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-gray-900 to-slate-950" />
+
+                {/* Noise Texture */}
+                <div className="absolute inset-0 opacity-30" style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'repeat'
+                }} />
+
+                {/* Connecting message */}
+                <div className="relative z-10 text-center">
+                    <h1 className="text-3xl font-semibold mb-4 text-amber-100">
+                        Preparing Game...
+                    </h1>
+                    <div className="w-16 h-16 mx-auto border-4 border-slate-700 border-t-amber-200 rounded-full animate-spin"></div>
+                </div>
+
+                {/* Mode Selection Modal */}
+                {showPreGameModeSelection && (
+                    <ModeSelectionModal
+                        onSelectMode={handlePreGameModeSelection}
+                        playerName={pendingPlayerName}
+                    />
+                )}
+            </div>
+        );
+    }
+
     if (gameState.phase === 'LOBBY') {
 
         return (
-            <div className="relative flex items-center justify-center min-h-screen h-screen bg-black text-white overflow-x-hidden overflow-y-auto">
+            <div className="relative min-h-screen bg-black text-white overflow-x-hidden overflow-y-auto">
                 {/* Dark Grim Background */}
                 <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950" />
 
@@ -270,7 +310,7 @@ const GameRoom = () => {
                     background: 'radial-gradient(ellipse at center, transparent 0%, transparent 40%, rgba(0,0,0,0.5) 80%, rgba(0,0,0,0.8) 100%)'
                 }} />
 
-                <div className="relative z-10 text-center w-full max-w-3xl px-4 sm:px-6 md:px-8 py-8 pt-32">
+                <div className="relative z-10 text-center w-full max-w-3xl mx-auto px-4 sm:px-6 md:px-8 py-8 pt-16">
                     {/* Grim Title */}
                     <div className="mb-6 md:mb-8">
                         <h1 className="text-3xl sm:text-4xl md:text-5xl font-black mb-3 md:mb-4 text-amber-50 opacity-90 leading-tight flex flex-wrap justify-center gap-x-3" style={{
@@ -316,14 +356,16 @@ const GameRoom = () => {
                             How to Play
                         </h3>
                         <div className="max-w-2xl mx-auto aspect-video bg-black/60 border-2 border-slate-700 rounded-xl overflow-hidden shadow-2xl">
-                            {/* YouTube embed - Replace VIDEO_ID with actual video ID */}
+                            {/* Loom video tutorial */}
                             <iframe
                                 className="w-full h-full"
-                                src="https://www.youtube.com/embed/YOUR_VIDEO_ID_HERE"
+                                src="https://www.loom.com/embed/32557135cb374215995e8239cf7c2bcf?hide_owner=true&hide_share=true&hide_title=true&hideEmbedTopBar=true&autoplay=true&loop=true"
                                 title="Reverse Turing Test Tutorial"
                                 frameBorder="0"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                webkitallowfullscreen="true"
+                                mozallowfullscreen="true"
                                 allowFullScreen
+                                allow="autoplay; fullscreen"
                             />
                         </div>
                         <p className="text-center text-xs sm:text-sm text-slate-500 mt-3 italic">
@@ -390,6 +432,7 @@ const GameRoom = () => {
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && inputText.trim() && userAvatar) {
                                     setPendingPlayerName(inputText.trim());
+                                    setIsConnectingToGame(true);
                                     setShowPreGameModeSelection(true);
                                     setInputText('');
                                 }
@@ -403,6 +446,7 @@ const GameRoom = () => {
                         onClick={() => {
                             if (inputText.trim() && userAvatar) {
                                 setPendingPlayerName(inputText.trim());
+                                setIsConnectingToGame(true);
                                 setShowPreGameModeSelection(true);
                                 setInputText('');
                             }
@@ -429,14 +473,6 @@ const GameRoom = () => {
                         background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.03) 0%, transparent 60%)'
                     }} />
                 </div>
-
-                {/* Pre-Game Mode Selection Modal */}
-                {showPreGameModeSelection && (
-                    <ModeSelectionModal
-                        onSelectMode={handlePreGameModeSelection}
-                        playerName={pendingPlayerName}
-                    />
-                )}
 
                 {/* Custom CSS for animations */}
                 <style>{`
