@@ -24,7 +24,7 @@ build/
 
 # Logs and cache
 logs/
-cache/
+# cache/ - DON'T ignore cache! We need president_intro_elevenlabs.mp3
 *.log
 
 # Documentation

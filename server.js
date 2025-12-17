@@ -169,11 +169,12 @@ async function initializeAIPlayers() {
   console.log('🤖 [Server] Initializing AI players with WebSockets...');
 
   // Map players to their specific API keys
+  const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const apiKeys = {
-    'player2': process.env.GOOGLE_API_KEY_F3 || process.env.GOOGLE_API_KEY,
-    'player3': process.env.GOOGLE_API_KEY_SEL || process.env.GOOGLE_API_KEY,
-    'player4': process.env.GOOGLE_API_KEY_AP || process.env.GOOGLE_API_KEY,
-    'moderator': process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY_F3 // Fallback to F3 if default is missing
+    'player2': process.env.GOOGLE_API_KEY_F3 || GEMINI_KEY,
+    'player3': process.env.GOOGLE_API_KEY_SEL || GEMINI_KEY,
+    'player4': process.env.GOOGLE_API_KEY_AP || GEMINI_KEY,
+    'moderator': GEMINI_KEY || process.env.GOOGLE_API_KEY_F3 // Fallback to F3 if default is missing
   };
 
   // Initialize regular players
@@ -263,18 +264,18 @@ wss.on('connection', (ws, req) => {
           moderatorController.startGame();
           broadcastGameState();
 
-          // Create Daily room
+          // Create Daily room (optional - for video, but we use Web Speech API for audio)
           createDailyRoom().then(url => {
             if (url) {
               ws.send(JSON.stringify({
                 type: 'DAILY_ROOM',
                 payload: { url }
               }));
-
-              // Start the simulated join sequence
-              runJoinSequence();
             }
           });
+
+          // Start the simulated join sequence (always run, regardless of Daily.co)
+          runJoinSequence();
           break;
 
           // ... (skip to onTriggerAiResponse)
@@ -605,7 +606,7 @@ ${targetOptions}
 Respond with ONLY the player ID (e.g., "player1" or "player2" or "player3" or "player4"). No explanation.`;
 
     // Use one of the API keys
-    const apiKey = process.env.GOOGLE_API_KEY_F3 || process.env.GOOGLE_API_KEY;
+    const apiKey = process.env.GOOGLE_API_KEY_F3 || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
@@ -944,9 +945,8 @@ async function handlePresidentIntro(script) {
 async function createDailyRoom() {
   const apiKey = process.env.DAILY_API_KEY;
   if (!apiKey) {
-    const msg = 'Missing DAILY_API_KEY in .env';
-    console.warn(`⚠️ ${msg}`);
-    broadcast({ type: 'SYSTEM_ERROR', payload: { message: msg } });
+    console.warn('⚠️ DAILY_API_KEY not set - Daily.co video calls disabled (optional)');
+    // Don't broadcast error to frontend - Daily.co is optional
     return null;
   }
 

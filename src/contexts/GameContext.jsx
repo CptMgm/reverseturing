@@ -865,7 +865,16 @@ export const GameProvider = ({ children }) => {
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
       }
-      console.log('🔊 [GameContext] AudioContext initialized/resumed');
+
+      // Play silent audio to unlock playback on iOS Safari
+      // This is required because mobile browsers block autoplay unless there's actual audio playback
+      const silentBuffer = audioContext.createBuffer(1, 1, 22050);
+      const silentSource = audioContext.createBufferSource();
+      silentSource.buffer = silentBuffer;
+      silentSource.connect(audioContext.destination);
+      silentSource.start();
+
+      console.log('🔊 [GameContext] AudioContext initialized/resumed and unlocked');
     } catch (e) {
       console.error('❌ [GameContext] Failed to initialize AudioContext:', e);
     }

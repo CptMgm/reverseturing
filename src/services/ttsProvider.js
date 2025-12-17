@@ -346,8 +346,8 @@ export async function generateTTS(text, playerId = 'moderator', apiLogger = null
  * Get information about the current TTS configuration
  */
 export function getTTSInfo() {
-  const hasElevenLabs = !!process.env.ELEVENLABS_API_KEY;
-  const hasGoogle = !!process.env.GOOGLE_API_KEY_F3 || !!process.env.GOOGLE_API_KEY;
+  const hasElevenLabs = !!(process.env.ELEVENLABS_API_KEY_2 || process.env.ELEVENLABS_API_KEY);
+  const hasGoogle = !!process.env.GOOGLE_API_KEY_F3 || !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
 
   return {
     provider: TTS_PROVIDER,
